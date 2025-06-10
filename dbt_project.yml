@@ -1,0 +1,26 @@
+name: 'dbt_cobre_data_hub'
+version: '1.0.0'
+config-version: 2
+
+profile: 'cobre_data_hub'
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  cobre_data_hub:
+      staging:
+        +materialized: view
+        +schema: dbt_{{ env }}
+      intermediate:
+        +materialized: view
+        +schema: dbt_{{ env }}
+      marts:
+        +materialized: table
+        +schema: dbt_{{ env }}

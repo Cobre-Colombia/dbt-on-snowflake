@@ -1,0 +1,29 @@
+WITH source AS (
+    SELECT 
+        ILI.INVOICE_ID,
+        ILI.BILLING_PERIOD_START::DATE AS MONTH,
+        P.PRODUCT_NAME,
+        UM.NAME AS USAGE_METRIC,
+        BSPP.PRICE_MINIMUM_AMOUNT,
+        UM.PROPERTY_FILTERS,
+        BSPP.PRICE_STRUCTURE,
+        ILI.QUANTITY,
+        ILI.RATE,
+        ILI.NET_TOTAL,
+        ILI.GROSS_TOTAL,
+        ILI.CALCULATED_AT
+    FROM {{ source('sequence', 'INVOICE_LINE_ITEMS') }} ILI
+    LEFT JOIN {{ source('sequence', 'PRICES') }} P
+        ON ILI.PRICE_ID = P.ID
+    LEFT JOIN {{ source('sequence', 'BILLING_SCHEDULE_PHASE_PRICES') }} BSPP
+        ON P.ID = BSPP.PRICE_ID
+        AND BSPP.STATUS = 'ACTIVE'
+        AND BSPP.PHASE_ARCHIVED_AT IS NULL
+    LEFT JOIN {{ source('sequence', 'USAGE_METRICS') }} UM
+        ON UM.ID = BSPP.PRICE_STRUCTURE['usageMetricId']::STRING
+    INNER JOIN {{ ref('stg_invoices') }} I
+        ON ILI.INVOICE_ID = I.ID
+    QUALIFY DENSE_RANK() OVER (PARTITION BY ILI.INVOICE_ID ORDER BY ILI.CALCULATED_AT DESC) = 1
+)
+
+SELECT * FROM source 
