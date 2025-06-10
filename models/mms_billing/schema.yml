@@ -1,0 +1,67 @@
+version: 2
+
+models:
+  - name: stg_invoices
+    description: Base model for invoices data
+    columns:
+      - name: id
+        description: Primary key of the invoice
+        tests:
+          - unique
+          - not_null
+      - name: customer_aliases
+        description: Customer identifier aliases
+
+  - name: stg_money_movements
+    description: Base model for money movements data
+    columns:
+      - name: mm_id
+        description: Primary key of the money movement
+        tests:
+          - unique
+          - not_null
+      - name: client_id
+        description: Client identifier
+      - name: eventtimestamp
+        description: Timestamp of the event
+      - name: transaction_type
+        description: Type of transaction
+      - name: transfer_method
+        description: Method of transfer (FAST_PAY, ACH, SPEI)
+
+  - name: int_invoice_pricing
+    description: Intermediate model combining invoice data with pricing information
+    columns:
+      - name: invoice_id
+        description: Primary key from invoices
+        tests:
+          - not_null
+      - name: month
+        description: Billing period month
+      - name: product_name
+        description: Name of the product
+      - name: usage_metric
+        description: Usage metric name
+      - name: price_minimum_amount
+        description: Minimum amount for pricing
+      - name: property_filters
+        description: JSON filters for pricing rules
+
+  - name: fct_cash_out_transactions
+    description: Final fact table for cash out transactions analysis
+    columns:
+      - name: mm_id
+        description: Money movement ID
+        tests:
+          - unique
+          - not_null
+      - name: invoice_id
+        description: Related invoice ID
+      - name: transaction_type
+        description: Type of transaction
+      - name: transfer_method
+        description: Method of transfer
+      - name: matches_pricing_rule
+        description: Boolean indicating if transaction matches pricing rules
+      - name: pricing_rule_name
+        description: Name of the matched pricing rule 
