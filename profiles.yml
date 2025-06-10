@@ -1,15 +1,15 @@
-tasty_bytes:
+cobre_data_hub:
   target: dev
   outputs:
     dev:
       type: snowflake
-      role: accountadmin
+      role: DATA_DEV_L0
       database: COBRE_GOLD_DB
       schema: DBT_DEV
       warehouse: COMPUTE_WH
     prod:
       type: snowflake
-      role: accountadmin
+      role: DATA_DEV_L0
       database: COBRE_GOLD_DB
       schema: DBT_PROD
       warehouse: COMPUTE_WH
