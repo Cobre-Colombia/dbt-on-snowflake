@@ -1,0 +1,63 @@
+WITH INVOICE AS (
+  SELECT
+      C.CUSTOMER_ALIASES,
+      I.ID
+  FROM {{ source('SEQUENCE', 'INVOICES') }} I
+  LEFT JOIN {{ source('SEQUENCE', 'CUSTOMERS') }} C
+      ON I.CUSTOMER_ID = C.ID
+  WHERE 1 = 1
+    AND (
+     C.CUSTOMER_ALIASES = '{{ var('client_id') }}'
+  OR C.CUSTOMER_ALIASES LIKE '{{ var('client_id') }},%'
+  OR C.CUSTOMER_ALIASES LIKE '%,{{ var('client_id') }}'
+  OR C.CUSTOMER_ALIASES LIKE '%,{{ var('client_id') }},%'
+)
+    AND BILLING_PERIOD_START :: DATE = '{{ var('billing_period_start') }}'
+    AND BILLING_PERIOD_END   :: DATE = '{{ var('billing_period_end') }}'
+),
+UNION_ALL AS (
+  SELECT
+       ILI.BILLING_PERIOD_START :: DATE              AS MONTH,
+       ILI.INVOICE_ID,
+       ILI.TITLE,
+       P.PRODUCT_NAME,
+       UM.NAME                                  AS USAGE_METRIC,
+       BSPP.PRICE_MINIMUM_AMOUNT,
+       IFF(BSPP.PRICE_MINIMUM_AMOUNT IS NOT NULL, TRUE, FALSE) AS CONSUMES_SAAS,
+       ILI.QUANTITY,
+       ILI.RATE,
+       UM.PROPERTY_FILTERS,
+       BSPP.PRICE_STRUCTURE,
+       ILI.CURRENCY,
+       ILI.NET_TOTAL,
+       ILI.GROSS_TOTAL,
+       ILI.CALCULATED_AT
+  FROM {{ source('SEQUENCE', 'INVOICE_LINE_ITEMS') }} ILI
+  LEFT JOIN {{ source('SEQUENCE', 'PRICES') }} P
+      ON ILI.PRICE_ID = P.ID
+  LEFT JOIN {{ source('SEQUENCE', 'BILLING_SCHEDULE_PHASE_PRICES') }} BSPP
+      ON P.ID = BSPP.PRICE_ID
+     AND BSPP.STATUS = 'ACTIVE'
+     AND BSPP.PHASE_ARCHIVED_AT IS NULL
+  LEFT JOIN {{ source('SEQUENCE', 'USAGE_METRICS') }} UM
+      ON UM.ID = BSPP.PRICE_STRUCTURE['usageMetricId'] :: STRING
+  INNER JOIN INVOICE I
+      ON ILI.INVOICE_ID = I.ID
+
+  QUALIFY
+    DENSE_RANK() OVER (
+      PARTITION BY ILI.INVOICE_ID
+      ORDER BY ILI.CALCULATED_AT DESC
+    ) = 1
+),
+RANKED AS (
+  SELECT
+    UA.*,
+    DENSE_RANK() OVER (
+      ORDER BY UA.CALCULATED_AT DESC
+    ) AS DATE_NUMING
+  FROM UNION_ALL UA
+)
+SELECT *
+FROM RANKED
+WHERE DATE_NUMING = 1
