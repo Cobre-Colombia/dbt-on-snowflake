@@ -96,19 +96,19 @@ with data as (
         )
         AND TYPE IN ('payout', 'ach', 'fast_pay', 'spei', 'spei_card')
         AND STATUS_STATE IN ('finished', 'completed')
-        --   AND DATE_TRUNC('MONTH',
-        --                  TO_DATE(
-        --                          CONVERT_TIMEZONE(
-        --                                  'UTC',
-        --                                  CASE
-        --                                      WHEN SOURCE_GEOGRAPHY = 'col' THEN 'America/Bogota'
-        --                                      WHEN SOURCE_GEOGRAPHY = 'mex' THEN 'America/Mexico_City'
-        --                                      ELSE 'UTC'
-        --                                      END,
-        --                                  TO_TIMESTAMP_NTZ(CREATED_AT)
-        --                          )
-        --                  )
-        --       ) = '{{ var('billing_period_start') }}'
+          AND DATE_TRUNC('MONTH',
+                         TO_DATE(
+                                 CONVERT_TIMEZONE(
+                                         'UTC',
+                                         CASE
+                                             WHEN SOURCE_GEOGRAPHY = 'col' THEN 'America/Bogota'
+                                             WHEN SOURCE_GEOGRAPHY = 'mex' THEN 'America/Mexico_City'
+                                             ELSE 'UTC'
+                                             END,
+                                         TO_TIMESTAMP_NTZ(CREATED_AT)
+                                 )
+                         )
+              ) = '{{ var('billing_period_start') }}'
         AND CLIENT_ID = '{{ var('client_id') }}'
 )
 

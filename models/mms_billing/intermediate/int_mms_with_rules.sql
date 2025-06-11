@@ -47,8 +47,6 @@ country_flat as (
     from rules,
          lateral flatten(input => property_filters_json:country) f
 ),
-
--- Unimos todo (permitiendo valores nulos si una clave no existe en la regla)
 rules_joined as (
     select
         r.product_name,
@@ -68,7 +66,6 @@ rules_joined as (
     left join country_flat on r.product_name = country_flat.product_name
 )
 
--- Hacemos match flexible con transacciones
 , mm as (
     select * from {{ ref('stg_payouts_mms') }}
 ),

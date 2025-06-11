@@ -12,8 +12,8 @@ with invoice as (
             or c.customer_aliases like '%,{{ var('client_id') }}'
             or c.customer_aliases like '%,{{ var('client_id') }},%'
         )
-        -- and billing_period_start :: date = '{{ var('billing_period_start') }}'
-        -- and billing_period_end   :: date = '{{ var('billing_period_end') }}'
+        and billing_period_start :: date = '{{ var('billing_period_start') }}'
+        and billing_period_end   :: date = '{{ var('billing_period_end') }}'
 ),
 
 union_all as (
@@ -61,6 +61,7 @@ ranked as (
 )
 
 select
+    distinct
     *,
     {{ parse_json_column('PROPERTY_FILTERS') }} as property_filters_json,
     {{ parse_json_column('PRICE_STRUCTURE') }} as price_structure_json
