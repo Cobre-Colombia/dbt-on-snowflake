@@ -19,6 +19,17 @@ ranked as (
     from with_date
 ),
 
+with_cumulative_amount as (
+    select
+        *,
+        sum(amount) over (
+            partition by matched_product_name, client_id, transaction_month
+            order by utc_created_at, mm_id
+            rows between unbounded preceding and current row
+        ) as cumulative_amount
+    from ranked
+),
+
 exploded as (
     select
         r.*,
@@ -39,7 +50,7 @@ exploded as (
                 end,
                 t.value:upperBound::int
         ) as tier_rank
-    from ranked r
+    from with_cumulative_amount r
     left join lateral flatten(input => r.price_structure_json:tiers) t
 ),
 
@@ -50,8 +61,8 @@ calc as (
         case 
             when pricing_type = 'LINEAR' and linear_is_percentage = true then amount * (linear_price_per_unit / 100)
             when pricing_type = 'LINEAR' and linear_is_percentage = false then linear_price_per_unit
-            when pricing_type = 'VOLUME' and amount >= coalesce(price_minimum_amount, 0) and tier_is_percentage = true then (amount * (tier_price / 100)) + coalesce(tier_fee, 0)
-            when pricing_type = 'VOLUME' and amount >= coalesce(price_minimum_amount, 0) and tier_is_percentage = false then tier_price + coalesce(tier_fee, 0)
+            when pricing_type = 'VOLUME' and cumulative_amount >= coalesce(price_minimum_amount, 0) and tier_is_percentage = true then (amount * (tier_price / 100)) + coalesce(tier_fee, 0)
+            when pricing_type = 'VOLUME' and cumulative_amount >= coalesce(price_minimum_amount, 0) and tier_is_percentage = false then tier_price + coalesce(tier_fee, 0)
             else 0
         end as revenue
     from exploded
@@ -80,6 +91,7 @@ revenue_structured as (
                     to_number(coalesce(tier_fee, 0), 10, 2),
                 'transaction_amount', to_number(amount, 18, 2),
                 'transaction_count', transaction_count,
+                'cumulative_amount', to_number(cumulative_amount, 18, 2),
                 'revenue', to_number(revenue, 18, 2),
                 'calculation_method',
                     case
@@ -95,16 +107,16 @@ revenue_structured as (
                             to_varchar(amount, 'FM999,999.00') || ' × ' || to_varchar(linear_price_per_unit, 'FM999,999.00') || '% = ' || to_varchar(revenue, 'FM999,999.00')
                         when pricing_type = 'LINEAR' and linear_is_percentage = false then 
                             to_varchar(linear_price_per_unit, 'FM999,999.00')
-                        when pricing_type = 'VOLUME' and amount >= coalesce(price_minimum_amount, 0) and tier_is_percentage = true then 
+                        when pricing_type = 'VOLUME' and cumulative_amount >= coalesce(price_minimum_amount, 0) and tier_is_percentage = true then 
                             to_varchar(amount, 'FM999,999.00') || ' × ' || to_varchar(tier_price, 'FM999,999.00') || '%' ||
                             coalesce(' + fee(' || to_varchar(tier_fee, 'FM999,999.00') || ')', '') ||
                             ' = ' || to_varchar(revenue, 'FM999,999.00')
-                        when pricing_type = 'VOLUME' and amount >= coalesce(price_minimum_amount, 0) and tier_is_percentage = false then 
+                        when pricing_type = 'VOLUME' and cumulative_amount >= coalesce(price_minimum_amount, 0) and tier_is_percentage = false then 
                             to_varchar(tier_price, 'FM999,999.00') ||
                             coalesce(' + fee(' || to_varchar(tier_fee, 'FM999,999.00') || ')', '') ||
                             ' = ' || to_varchar(revenue, 'FM999,999.00')
-                        when pricing_type = 'VOLUME' and amount < coalesce(price_minimum_amount, 0) then 
-                            'No se aplica: amount < price_minimum_amount'
+                        when pricing_type = 'VOLUME' and cumulative_amount < coalesce(price_minimum_amount, 0) then 
+                            'No se aplica: acumulado < price_minimum_amount'
                         else 'No aplica'
                     end
             )
@@ -138,6 +150,7 @@ select
     tier_upper_bound as volume_upper_bound,
     tier_is_percentage as volume_is_percentage,
     transaction_count,
+    cumulative_amount,
     regla_numero,
     revenue,
     revenue_calculation_details
