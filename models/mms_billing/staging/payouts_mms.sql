@@ -1,20 +1,15 @@
 SELECT AMOUNT,ID                                                               AS MM_ID
      , CLIENT_ID
      , 'COBRE BILLING'                                                  AS EVENTTYPE
-     , DATE_TRUNC(
-        'DAY',
-        TO_DATE(
-                CONVERT_TIMEZONE(
-                        'UTC',
-                        CASE
-                            WHEN SOURCE_GEOGRAPHY = 'col' THEN 'America/Bogota'
-                            WHEN SOURCE_GEOGRAPHY = 'mex' THEN 'America/Mexico_City'
-                            ELSE 'UTC'
-                            END,
-                        TO_TIMESTAMP_NTZ(CREATED_AT)
-                )
-        )
-       )                                                                AS EVENTTIMESTAMP
+     , CONVERT_TIMEZONE(
+            'UTC',
+            CASE
+                WHEN SOURCE_GEOGRAPHY = 'col' THEN 'America/Bogota'
+                WHEN SOURCE_GEOGRAPHY = 'mex' THEN 'America/Mexico_City'
+                ELSE 'UTC'
+            END,
+            TO_TIMESTAMP_NTZ(CREATED_AT)
+        ) as utc_created_at
      , 'PAYOUT'                                                         AS FLOW
      , UPPER(TYPE)                                                      AS TRANSACTION_TYPE
      , CASE
