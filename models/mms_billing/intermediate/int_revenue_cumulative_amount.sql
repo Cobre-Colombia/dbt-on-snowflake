@@ -12,16 +12,19 @@ with with_date as (
     from {{ ref('int_mms_with_rules') }}
 ),
 
+ranked as (
+    select
+        *,
+        row_number() over (
+            partition by matched_product_name, client_id, transaction_month
+            order by utc_created_at, mm_id
+        ) as transaction_count
+    from with_date
+),
+
 exploded as (
     select
-        r.mm_id,
-        r.amount,
-        r.client_id,
-        r.utc_created_at,
-        r.matched_product_name,
-        r.price_structure_json,
-        r.price_minimum_amount,
-        r.transaction_month,
+        r.*,
         upper(r.price_structure_json:pricingType::string) as pricing_type,
         r.price_structure_json:isPricePercentage::boolean as linear_is_percentage,
         r.price_structure_json:pricePerUnit::float as linear_price_per_unit,
@@ -34,12 +37,12 @@ exploded as (
             order by
                 case
                     when t.value:upperBound is null then 2
-                    when t.value:upperBound::int >= 1 then 1
+                    when t.value:upperBound::int >= r.transaction_count then 1
                     else 3
                 end,
                 t.value:upperBound::int
         ) as tier_rank
-    from with_date r
+    from ranked r
     left join lateral flatten(input => r.price_structure_json:tiers) t
 ),
 
@@ -63,16 +66,17 @@ calc as (
 ranked_revenue as (
     select
         *,
-        row_number() over (
-            partition by matched_product_name, client_id, transaction_month
-            order by utc_created_at, mm_id
-        ) as transaction_count,
-
         sum(revenue) over (
             partition by matched_product_name, client_id, transaction_month
             order by utc_created_at, mm_id
             rows between unbounded preceding and current row
-        ) as cumulative_revenue
+        ) as cumulative_revenue,
+
+        sum(revenue) over (
+            partition by matched_product_name, client_id, transaction_month
+            order by utc_created_at, mm_id
+            rows between unbounded preceding and 1 preceding
+        ) as cumulative_revenue_before
     from calc
 ),
 
@@ -80,17 +84,28 @@ calc_with_flags as (
     select
         *,
         case
-            when pricing_type in ('LINEAR', 'VOLUME', 'GRADUATED') 
-                 and cumulative_revenue <= coalesce(price_minimum_amount, 0) 
-            then true
-            else false
+            when cumulative_revenue_before >= coalesce(price_minimum_amount, 0) then 0
+            when cumulative_revenue > coalesce(price_minimum_amount, 0) then
+                coalesce(price_minimum_amount, 0) - coalesce(cumulative_revenue_before, 0)
+            else revenue
+        end as revenue_for_saas_amount,
+
+        case
+            when cumulative_revenue > coalesce(price_minimum_amount, 0) then
+                revenue - greatest(coalesce(price_minimum_amount, 0) - coalesce(cumulative_revenue_before, 0), 0)
+            else 0
+        end as revenue_not_saas_amount,
+
+        case
+            when cumulative_revenue <= coalesce(price_minimum_amount, 0) then true
+            when cumulative_revenue_before >= coalesce(price_minimum_amount, 0) then false
+            else null
         end as consumes_saas,
 
         case
-            when pricing_type in ('LINEAR', 'VOLUME', 'GRADUATED') 
-                 and cumulative_revenue <= coalesce(price_minimum_amount, 0)
-            then true
-            else false
+            when cumulative_revenue <= coalesce(price_minimum_amount, 0) then true
+            when cumulative_revenue_before >= coalesce(price_minimum_amount, 0) then false
+            else null
         end as revenue_for_saas
     from ranked_revenue
 ),
@@ -120,6 +135,8 @@ revenue_structured as (
                 'transaction_count', transaction_count,
                 'cumulative_revenue', to_number(cumulative_revenue, 18, 2),
                 'revenue', to_number(revenue, 18, 2),
+                'revenue_for_saas_amount', to_number(revenue_for_saas_amount, 18, 2),
+                'revenue_not_saas_amount', to_number(revenue_not_saas_amount, 18, 2),
                 'revenue_for_saas', revenue_for_saas,
                 'consumes_saas', consumes_saas
             )
@@ -159,6 +176,9 @@ select
 
     revenue,
     cumulative_revenue,
+    cumulative_revenue_before,
+    revenue_for_saas_amount,
+    revenue_not_saas_amount,
     consumes_saas,
     revenue_for_saas,
 
