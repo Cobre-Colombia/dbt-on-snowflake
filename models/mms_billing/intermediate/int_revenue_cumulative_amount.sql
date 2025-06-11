@@ -88,13 +88,13 @@ calc_with_flags as (
             when cumulative_revenue > coalesce(price_minimum_amount, 0) then
                 coalesce(price_minimum_amount, 0) - coalesce(cumulative_revenue_before, 0)
             else revenue
-        end as revenue_for_saas_amount,
+        end as saas_revenue,
 
         case
             when cumulative_revenue > coalesce(price_minimum_amount, 0) then
                 revenue - greatest(coalesce(price_minimum_amount, 0) - coalesce(cumulative_revenue_before, 0), 0)
             else 0
-        end as revenue_not_saas_amount,
+        end as not_saas_revenue,
 
         case
             when cumulative_revenue <= coalesce(price_minimum_amount, 0) then true
@@ -135,8 +135,8 @@ revenue_structured as (
                 'transaction_count', transaction_count,
                 'cumulative_revenue', to_number(cumulative_revenue, 18, 2),
                 'revenue', to_number(revenue, 18, 2),
-                'revenue_for_saas_amount', to_number(revenue_for_saas_amount, 18, 2),
-                'revenue_not_saas_amount', to_number(revenue_not_saas_amount, 18, 2),
+                'saas_revenue', to_number(saas_revenue, 18, 2),
+                'not_saas_revenue', to_number(not_saas_revenue, 18, 2),
                 'revenue_for_saas', revenue_for_saas,
                 'consumes_saas', consumes_saas
             )
@@ -177,8 +177,8 @@ select
     revenue,
     cumulative_revenue,
     cumulative_revenue_before,
-    revenue_for_saas_amount,
-    revenue_not_saas_amount,
+    saas_revenue,
+    not_saas_revenue,
     consumes_saas,
     revenue_for_saas,
 
