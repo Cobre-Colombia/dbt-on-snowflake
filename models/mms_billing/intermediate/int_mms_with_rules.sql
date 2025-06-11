@@ -1,5 +1,6 @@
 with rules as (
     select
+        client_id,
         product_name,
         price_structure_json,
         price_minimum_amount,
@@ -49,6 +50,7 @@ country_flat as (
 ),
 rules_joined as (
     select
+        r.client_id,
         r.product_name,
         r.price_structure_json,
         r.price_minimum_amount,
@@ -68,6 +70,12 @@ rules_joined as (
 
 , mm as (
     select * from {{ ref('stg_payouts_mms') }}
+    union all
+    select * from {{ ref('stg_payin_mms') }}
+    union all
+    select * from {{ ref('stg_dag_mms') }}
+    union all
+    select * from {{ ref('stg_balance_recharges') }}
 ),
 
 joined as (
@@ -84,6 +92,7 @@ joined as (
        and (rf.origination_system is null or upper(mm.origination_system) = upper(rf.origination_system))
        and (rf.source_account_type is null or upper(mm.source_account_type) = upper(rf.source_account_type))
        and (rf.country is null or upper(mm.country) = upper(rf.country))
+       and (mm.client_id = rf.client_id)
 )
 
 select * from joined

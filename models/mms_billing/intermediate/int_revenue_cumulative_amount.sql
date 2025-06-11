@@ -1,38 +1,27 @@
-with data as (
-    select * from {{ ref('int_mms_with_rules') }}
-),
-
-with_date as (
+with with_date as (
     select
-        *,
+        mm_id,
+        amount,
+        client_id,
+        utc_created_at,
+        matched_product_name,
+        price_structure_json,
+        price_minimum_amount,
+        consumes_saas as original_consumes_saas,
         date_trunc('month', utc_created_at) as transaction_month
-    from data
-),
-
-ranked as (
-    select
-        *,
-        row_number() over (
-            partition by matched_product_name, client_id, date_trunc('month', utc_created_at)
-            order by utc_created_at, mm_id
-        ) as transaction_count
-    from with_date
-),
-
-with_cumulative_amount as (
-    select
-        *,
-        sum(amount) over (
-            partition by matched_product_name, client_id, transaction_month
-            order by utc_created_at, mm_id
-            rows between unbounded preceding and current row
-        ) as cumulative_amount
-    from ranked
+    from {{ ref('int_mms_with_rules') }}
 ),
 
 exploded as (
     select
-        r.*,
+        r.mm_id,
+        r.amount,
+        r.client_id,
+        r.utc_created_at,
+        r.matched_product_name,
+        r.price_structure_json,
+        r.price_minimum_amount,
+        r.transaction_month,
         upper(r.price_structure_json:pricingType::string) as pricing_type,
         r.price_structure_json:isPricePercentage::boolean as linear_is_percentage,
         r.price_structure_json:pricePerUnit::float as linear_price_per_unit,
@@ -45,12 +34,12 @@ exploded as (
             order by
                 case
                     when t.value:upperBound is null then 2
-                    when t.value:upperBound::int >= r.transaction_count then 1
+                    when t.value:upperBound::int >= 1 then 1
                     else 3
                 end,
                 t.value:upperBound::int
         ) as tier_rank
-    from with_cumulative_amount r
+    from with_date r
     left join lateral flatten(input => r.price_structure_json:tiers) t
 ),
 
@@ -61,12 +50,49 @@ calc as (
         case 
             when pricing_type = 'LINEAR' and linear_is_percentage = true then amount * (linear_price_per_unit / 100)
             when pricing_type = 'LINEAR' and linear_is_percentage = false then linear_price_per_unit
-            when pricing_type = 'VOLUME' and cumulative_amount >= coalesce(price_minimum_amount, 0) and tier_is_percentage = true then (amount * (tier_price / 100)) + coalesce(tier_fee, 0)
-            when pricing_type = 'VOLUME' and cumulative_amount >= coalesce(price_minimum_amount, 0) and tier_is_percentage = false then tier_price + coalesce(tier_fee, 0)
+            when pricing_type = 'VOLUME' and tier_is_percentage = true then (amount * (tier_price / 100)) + coalesce(tier_fee, 0)
+            when pricing_type = 'VOLUME' and tier_is_percentage = false then tier_price + coalesce(tier_fee, 0)
+            when pricing_type = 'GRADUATED' and tier_is_percentage = true then (amount * (tier_price / 100)) + coalesce(tier_fee, 0)
+            when pricing_type = 'GRADUATED' and tier_is_percentage = false then tier_price + coalesce(tier_fee, 0)
             else 0
         end as revenue
     from exploded
     where pricing_type = 'LINEAR' or tier_rank = 1
+),
+
+ranked_revenue as (
+    select
+        *,
+        row_number() over (
+            partition by matched_product_name, client_id, transaction_month
+            order by utc_created_at, mm_id
+        ) as transaction_count,
+
+        sum(revenue) over (
+            partition by matched_product_name, client_id, transaction_month
+            order by utc_created_at, mm_id
+            rows between unbounded preceding and current row
+        ) as cumulative_revenue
+    from calc
+),
+
+calc_with_flags as (
+    select
+        *,
+        case
+            when pricing_type in ('LINEAR', 'VOLUME', 'GRADUATED') 
+                 and cumulative_revenue <= coalesce(price_minimum_amount, 0) 
+            then true
+            else false
+        end as consumes_saas,
+
+        case
+            when pricing_type in ('LINEAR', 'VOLUME', 'GRADUATED') 
+                 and cumulative_revenue <= coalesce(price_minimum_amount, 0)
+            then true
+            else false
+        end as revenue_for_saas
+    from ranked_revenue
 ),
 
 revenue_structured as (
@@ -84,6 +110,7 @@ revenue_structured as (
                 'is_percentage', 
                     case when pricing_type = 'LINEAR' then linear_is_percentage
                          when pricing_type = 'VOLUME' then tier_is_percentage
+                         when pricing_type = 'GRADUATED' then tier_is_percentage
                          else null end,
                 'price', 
                     to_number(coalesce(tier_price, linear_price_per_unit), 10, 2),
@@ -91,67 +118,50 @@ revenue_structured as (
                     to_number(coalesce(tier_fee, 0), 10, 2),
                 'transaction_amount', to_number(amount, 18, 2),
                 'transaction_count', transaction_count,
-                'cumulative_amount', to_number(cumulative_amount, 18, 2),
+                'cumulative_revenue', to_number(cumulative_revenue, 18, 2),
                 'revenue', to_number(revenue, 18, 2),
-                'calculation_method',
-                    case
-                        when pricing_type = 'LINEAR' and linear_is_percentage = true then 'Porcentaje'
-                        when pricing_type = 'LINEAR' and linear_is_percentage = false then 'Carga fija'
-                        when pricing_type = 'VOLUME' and tier_is_percentage = true then 'Volumen - Porcentaje'
-                        when pricing_type = 'VOLUME' and tier_is_percentage = false then 'Volumen - Carga fija'
-                        else 'No aplica'
-                    end,
-                'calculation_formula',
-                    case
-                        when pricing_type = 'LINEAR' and linear_is_percentage = true then 
-                            to_varchar(amount, 'FM999,999.00') || ' × ' || to_varchar(linear_price_per_unit, 'FM999,999.00') || '% = ' || to_varchar(revenue, 'FM999,999.00')
-                        when pricing_type = 'LINEAR' and linear_is_percentage = false then 
-                            to_varchar(linear_price_per_unit, 'FM999,999.00')
-                        when pricing_type = 'VOLUME' and cumulative_amount >= coalesce(price_minimum_amount, 0) and tier_is_percentage = true then 
-                            to_varchar(amount, 'FM999,999.00') || ' × ' || to_varchar(tier_price, 'FM999,999.00') || '%' ||
-                            coalesce(' + fee(' || to_varchar(tier_fee, 'FM999,999.00') || ')', '') ||
-                            ' = ' || to_varchar(revenue, 'FM999,999.00')
-                        when pricing_type = 'VOLUME' and cumulative_amount >= coalesce(price_minimum_amount, 0) and tier_is_percentage = false then 
-                            to_varchar(tier_price, 'FM999,999.00') ||
-                            coalesce(' + fee(' || to_varchar(tier_fee, 'FM999,999.00') || ')', '') ||
-                            ' = ' || to_varchar(revenue, 'FM999,999.00')
-                        when pricing_type = 'VOLUME' and cumulative_amount < coalesce(price_minimum_amount, 0) then 
-                            'No se aplica: acumulado < price_minimum_amount'
-                        else 'No aplica'
-                    end
+                'revenue_for_saas', revenue_for_saas,
+                'consumes_saas', consumes_saas
             )
         ) as revenue_calculation_details
-    from calc
+    from calc_with_flags
 )
 
 select
     mm_id,
-    amount,
     client_id,
+    matched_product_name,
     utc_created_at,
     transaction_month,
-    matched_product_name,
+    transaction_count,
+
+    amount,
     price_structure_json,
     price_minimum_amount,
-    consumes_saas,
+
     pricing_type,
     case 
         when pricing_type = 'LINEAR' then linear_is_percentage
-        when pricing_type = 'VOLUME' then tier_is_percentage
+        when pricing_type in ('VOLUME', 'GRADUATED') then tier_is_percentage
         else null
     end as is_percentage,
+
     case 
         when pricing_type = 'LINEAR' then linear_price_per_unit
-        when pricing_type = 'VOLUME' then tier_price
+        when pricing_type in ('VOLUME', 'GRADUATED') then tier_price
         else null
     end as price_per_unit,
+
     tier_price as volume_price,
     tier_fee as volume_fee,
     tier_upper_bound as volume_upper_bound,
     tier_is_percentage as volume_is_percentage,
-    transaction_count,
-    cumulative_amount,
-    regla_numero,
+
     revenue,
+    cumulative_revenue,
+    consumes_saas,
+    revenue_for_saas,
+
+    regla_numero,
     revenue_calculation_details
 from revenue_structured

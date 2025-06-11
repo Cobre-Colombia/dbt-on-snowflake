@@ -21,3 +21,14 @@ sources:
     tables:
       - name: MONEY_MOVEMENTS
         description: "Tabla de movimientos de dinero en el almacén de datos." 
+  - name: SALES_OPS
+    description: "Base de datos de Sales Ops."
+    tables:
+      - name: PAYOUT_TRANSACTIONS
+        description: "Tabla de transacciones de pago."
+      - name: PAYIN_TRANSACTIONS
+        description: "Tabla de transacciones de ingreso."
+      - name: DAC_TRANSACTIONS
+        description: "Tabla de transacciones de DAC."
+      - name: BALANCE_RECHARGES
+        description: "Tabla de BALANCE_RECHARGES"

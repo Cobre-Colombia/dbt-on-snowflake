@@ -18,6 +18,7 @@ with invoice as (
 
 union_all as (
     select
+        i.customer_aliases as client_id,
         ili.billing_period_start :: date as month,
         ili.invoice_id,
         ili.title,
