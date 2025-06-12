@@ -21,6 +21,15 @@ ranked as (
     from with_date
 ),
 
+with_global_order as (
+    select *,
+        row_number() over (
+            partition by client_id, transaction_month
+            order by utc_created_at, mm_id
+        ) as global_transaction_order
+    from ranked
+),
+
 tiers as (
     select
         r.mm_id,
@@ -32,11 +41,12 @@ tiers as (
         r.price_structure_json,
         r.price_minimum_amount,
         r.transaction_count,
+        r.global_transaction_order,
         t.value:price::float as tier_price,
         t.value:fee::float as tier_fee,
         t.value:upperBound::int as tier_upper_bound,
         t.value:isPricePercentage::boolean as tier_is_percentage
-    from ranked r
+    from with_global_order r
     left join lateral flatten(input => r.price_structure_json:tiers) t
 ),
 
@@ -125,13 +135,13 @@ ranked_revenue as (
 
         sum(revenue) over (
             partition by client_id, transaction_month
-            order by utc_created_at, mm_id
+            order by global_transaction_order
             rows between unbounded preceding and current row
         ) as cumulative_revenue_global,
 
         sum(revenue) over (
             partition by client_id, transaction_month
-            order by utc_created_at, mm_id
+            order by global_transaction_order
             rows between unbounded preceding and 1 preceding
         ) as cumulative_revenue_global_before
     from calc
@@ -162,7 +172,9 @@ calc_with_flags as (
             when cumulative_revenue_global > coalesce(g.price_minimum_revenue, 0) then
                 revenue - greatest(coalesce(g.price_minimum_revenue, 0) - coalesce(cumulative_revenue_global_before, 0), 0)
             else 0
-        end as not_saas_revenue
+        end as not_saas_revenue,
+
+        greatest(coalesce(g.price_minimum_revenue, 0) - coalesce(cumulative_revenue_global, 0), 0) as remaining_minimum
     from ranked_revenue r
     left join global_minimums g
       on r.client_id = g.client_id and r.transaction_month = g.transaction_month
@@ -209,6 +221,7 @@ revenue_structured as (
                 'cumulative_revenue', to_number(cumulative_revenue, 18, 2),
                 'saas_revenue', to_number(saas_revenue, 18, 2),
                 'not_saas_revenue', to_number(not_saas_revenue, 18, 2),
+                'remaining_minimum', to_number(remaining_minimum, 18, 2),
                 'revenue_type',
                     case
                         when saas_revenue > 0 and not_saas_revenue = 0 then 'saas'
@@ -252,5 +265,6 @@ select
     saas_revenue,
     not_saas_revenue,
     revenue_type,
+    remaining_minimum,
     revenue_calculation_details
 from revenue_structured
