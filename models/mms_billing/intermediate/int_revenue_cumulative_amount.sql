@@ -11,7 +11,6 @@ with with_date as (
     from {{ ref('int_mms_with_rules') }}
 ),
 
--- Calculamos el orden correcto por cliente, producto y mes (para usarlo en tier evaluation)
 ranked as (
     select *,
         row_number() over (
@@ -26,29 +25,61 @@ ranked as (
     from with_date
 ),
 
--- Explotamos los tiers, manteniendo la transacción original
-tiers_exploded as (
+linear_pricing as (
     select
-        r.*,
+        mm_id, amount, client_id, utc_created_at, matched_product_name,
+        price_structure_json, price_minimum_amount, transaction_month,
+        transaction_count, global_transaction_order,
+        price_structure_json:pricePerUnit::float as linear_price_per_unit,
+        price_structure_json:isPricePercentage::boolean as linear_is_percentage,
+        null::float as tier_price,
+        null::float as tier_fee,
+        null::int as tier_upper_bound,
+        null::boolean as tier_is_percentage,
+        upper(price_structure_json:pricingType::string) as pricing_type
+    from ranked
+    where upper(price_structure_json:pricingType::string) = 'LINEAR'
+),
+
+tiered_pricing_raw as (
+    select
+        r.mm_id, r.amount, r.client_id, r.utc_created_at, r.matched_product_name,
+        r.price_structure_json, r.price_minimum_amount, r.transaction_month,
+        r.transaction_count, r.global_transaction_order,
+        null::float as linear_price_per_unit,
+        null::boolean as linear_is_percentage,
         t.value:price::float as tier_price,
         t.value:fee::float as tier_fee,
         t.value:upperBound::int as tier_upper_bound,
-        t.value:isPricePercentage::boolean as tier_is_percentage
+        t.value:isPricePercentage::boolean as tier_is_percentage,
+        upper(r.price_structure_json:pricingType::string) as pricing_type
     from ranked r
     left join lateral flatten(input => r.price_structure_json:tiers) t
+    where upper(r.price_structure_json:pricingType::string) in ('VOLUME', 'GRADUATED')
 ),
 
--- Anotamos metadata de pricing
-with_tiers as (
+pricing_all as (
     select
-        *,
-        upper(price_structure_json:pricingType::string) as pricing_type,
-        price_structure_json:isPricePercentage::boolean as linear_is_percentage,
-        price_structure_json:pricePerUnit::float as linear_price_per_unit
-    from tiers_exploded
+        mm_id, amount, client_id, utc_created_at, matched_product_name,
+        price_structure_json, price_minimum_amount, transaction_month,
+        transaction_count, global_transaction_order,
+        linear_price_per_unit, linear_is_percentage,
+        tier_price, tier_fee, tier_upper_bound, tier_is_percentage,
+        pricing_type
+    from linear_pricing
+
+    union all
+
+    select
+        mm_id, amount, client_id, utc_created_at, matched_product_name,
+        price_structure_json, price_minimum_amount, transaction_month,
+        transaction_count, global_transaction_order,
+        linear_price_per_unit, linear_is_percentage,
+        tier_price, tier_fee, tier_upper_bound, tier_is_percentage,
+        pricing_type
+    from tiered_pricing_raw
 ),
 
--- Aquí usamos el transaction_count correcto para determinar el tier que aplica
 tier_ranked as (
     select *,
         row_number() over (
@@ -57,21 +88,20 @@ tier_ranked as (
                 case
                     when pricing_type = 'GRADUATED' and tier_upper_bound is not null and transaction_count <= tier_upper_bound then 1
                     when pricing_type = 'GRADUATED' and tier_upper_bound is null then 2
-                    when pricing_type != 'GRADUATED' and (tier_upper_bound is null or transaction_count <= tier_upper_bound) then 3
+                    when pricing_type = 'VOLUME' and (tier_upper_bound is null or transaction_count <= tier_upper_bound) then 3
                     else 4
                 end,
                 tier_upper_bound desc
         ) as tier_rank
-    from with_tiers
+    from pricing_all
 ),
 
 tier_selected as (
     select *
     from tier_ranked
-    where tier_rank = 1
+    where pricing_type = 'LINEAR' or tier_rank = 1
 ),
 
--- latest_volume_tier usa el transaction_count para seleccionar el tier en VOLUME
 latest_volume_tier as (
     select distinct
         transaction_month,
@@ -80,8 +110,7 @@ latest_volume_tier as (
         pricing_type,
         max_by(tier_price, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_price,
         max_by(tier_fee, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_fee,
-        max_by(tier_is_percentage, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_is_percentage,
-        max_by(tier_upper_bound, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_upper_bound
+        max_by(tier_is_percentage, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_is_percentage
     from tier_selected
     where pricing_type = 'VOLUME'
 ),
@@ -174,60 +203,6 @@ calc_with_flags as (
     from ranked_revenue r
     left join global_minimums g
       on r.client_id = g.client_id and r.transaction_month = g.transaction_month
-),
-
-revenue_structured as (
-    select
-        *,
-        case
-            when saas_revenue > 0 and not_saas_revenue = 0 then 'saas'
-            when saas_revenue = 0 and not_saas_revenue > 0 then 'post_minimum'
-            when saas_revenue > 0 and not_saas_revenue > 0 then 'mixed'
-            else null
-        end as revenue_type,
-
-        array_construct(
-            object_construct_keep_null(
-                'match_name', matched_product_name,
-                'pricing_type', pricing_type,
-                'formula_applied',
-                    case
-                        when pricing_type = 'LINEAR' and linear_is_percentage then 'amount * (price_per_unit / 100)'
-                        when pricing_type = 'LINEAR' and not linear_is_percentage then 'fixed price_per_unit'
-                        when pricing_type = 'VOLUME' and eff_tier_is_percentage then 'amount * (tier_price / 100) + fee'
-                        when pricing_type = 'VOLUME' and not eff_tier_is_percentage then 'tier_price + fee'
-                        when pricing_type = 'GRADUATED' and tier_is_percentage then 'amount * (tier_price / 100) + fee'
-                        when pricing_type = 'GRADUATED' and not tier_is_percentage then 'tier_price + fee'
-                        else 'unknown'
-                    end,
-                'is_percentage',
-                    case when pricing_type = 'LINEAR' then linear_is_percentage
-                         when pricing_type = 'VOLUME' then eff_tier_is_percentage
-                         when pricing_type = 'GRADUATED' then tier_is_percentage
-                         else null end,
-                'price', to_number(
-                    case when pricing_type = 'LINEAR' then linear_price_per_unit
-                         when pricing_type = 'VOLUME' then eff_tier_price
-                         when pricing_type = 'GRADUATED' then tier_price
-                         else null end, 10, 2),
-                'fee', to_number(coalesce(eff_tier_fee, tier_fee, 0), 10, 2),
-                'transaction_amount', to_number(amount, 18, 2),
-                'transaction_count', transaction_count,
-                'revenue', to_number(revenue, 18, 2),
-                'cumulative_revenue', to_number(cumulative_revenue, 18, 2),
-                'saas_revenue', to_number(saas_revenue, 18, 2),
-                'not_saas_revenue', to_number(not_saas_revenue, 18, 2),
-                'remaining_minimum', to_number(remaining_minimum, 18, 2),
-                'revenue_type',
-                    case
-                        when saas_revenue > 0 and not_saas_revenue = 0 then 'saas'
-                        when saas_revenue = 0 and not_saas_revenue > 0 then 'post_minimum'
-                        when saas_revenue > 0 and not_saas_revenue > 0 then 'mixed'
-                        else null
-                    end
-            )
-        ) as revenue_calculation_details
-    from calc_with_flags
 )
 
 select
@@ -257,7 +232,11 @@ select
     cumulative_revenue_before,
     saas_revenue,
     not_saas_revenue,
-    revenue_type,
-    remaining_minimum,
-    revenue_calculation_details
-from revenue_structured
+    case
+        when saas_revenue > 0 and not_saas_revenue = 0 then 'saas'
+        when saas_revenue = 0 and not_saas_revenue > 0 then 'post_minimum'
+        when saas_revenue > 0 and not_saas_revenue > 0 then 'mixed'
+        else null
+    end as revenue_type,
+    remaining_minimum
+from calc_with_flags
