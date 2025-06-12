@@ -95,4 +95,6 @@ joined as (
        and (mm.client_id = rf.client_id)
 )
 
-select * from joined
+select distinct * 
+from joined 
+where matched_product_name is not null

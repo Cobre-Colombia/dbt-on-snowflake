@@ -11,81 +11,67 @@ with with_date as (
     from {{ ref('int_mms_with_rules') }}
 ),
 
+-- Calculamos el orden correcto por cliente, producto y mes (para usarlo en tier evaluation)
 ranked as (
-    select
-        *,
+    select *,
         row_number() over (
             partition by matched_product_name, client_id, transaction_month
             order by utc_created_at, mm_id
-        ) as pre_tier_transaction_count
-    from with_date
-),
+        ) as transaction_count,
 
-with_global_order as (
-    select *,
         row_number() over (
             partition by client_id, transaction_month
             order by utc_created_at, mm_id
         ) as global_transaction_order
-    from ranked
+    from with_date
 ),
 
-tiers as (
+-- Explotamos los tiers, manteniendo la transacción original
+tiers_exploded as (
     select
-        r.mm_id,
-        r.amount,
-        r.client_id,
-        r.utc_created_at,
-        r.transaction_month,
-        r.matched_product_name,
-        r.price_structure_json,
-        r.price_minimum_amount,
-        r.pre_tier_transaction_count,
-        r.global_transaction_order,
+        r.*,
         t.value:price::float as tier_price,
         t.value:fee::float as tier_fee,
         t.value:upperBound::int as tier_upper_bound,
         t.value:isPricePercentage::boolean as tier_is_percentage
-    from with_global_order r
+    from ranked r
     left join lateral flatten(input => r.price_structure_json:tiers) t
 ),
 
-exploded as (
+-- Anotamos metadata de pricing
+with_tiers as (
     select
         *,
         upper(price_structure_json:pricingType::string) as pricing_type,
         price_structure_json:isPricePercentage::boolean as linear_is_percentage,
-        price_structure_json:pricePerUnit::float as linear_price_per_unit,
-        row_number() over (
-            partition by mm_id, matched_product_name
-            order by
-                case
-                    when tier_upper_bound is null then 2
-                    when tier_upper_bound >= pre_tier_transaction_count then 1
-                    else 3
-                end,
-                tier_upper_bound
-        ) as tier_rank
-    from tiers
-    where pricing_type in ('LINEAR', 'VOLUME', 'GRADUATED')
+        price_structure_json:pricePerUnit::float as linear_price_per_unit
+    from tiers_exploded
 ),
 
-exploded_filtered as (
+-- Aquí usamos el transaction_count correcto para determinar el tier que aplica
+tier_ranked as (
+    select *,
+        row_number() over (
+            partition by mm_id
+            order by
+                case
+                    when pricing_type = 'GRADUATED' and tier_upper_bound is not null and transaction_count <= tier_upper_bound then 1
+                    when pricing_type = 'GRADUATED' and tier_upper_bound is null then 2
+                    when pricing_type != 'GRADUATED' and (tier_upper_bound is null or transaction_count <= tier_upper_bound) then 3
+                    else 4
+                end,
+                tier_upper_bound desc
+        ) as tier_rank
+    from with_tiers
+),
+
+tier_selected as (
     select *
-    from exploded
+    from tier_ranked
     where tier_rank = 1
 ),
 
-reindexed as (
-    select
-        *,
-        row_number() over (
-            partition by matched_product_name, client_id, transaction_month
-            order by utc_created_at, mm_id
-        ) as transaction_count
-    from exploded_filtered
-),
-
+-- latest_volume_tier usa el transaction_count para seleccionar el tier en VOLUME
 latest_volume_tier as (
     select distinct
         transaction_month,
@@ -96,7 +82,7 @@ latest_volume_tier as (
         max_by(tier_fee, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_fee,
         max_by(tier_is_percentage, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_is_percentage,
         max_by(tier_upper_bound, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_upper_bound
-    from reindexed
+    from tier_selected
     where pricing_type = 'VOLUME'
 ),
 
@@ -106,7 +92,7 @@ adjusted as (
         case when r.pricing_type = 'VOLUME' then l.latest_tier_price else r.tier_price end as eff_tier_price,
         case when r.pricing_type = 'VOLUME' then l.latest_tier_fee else r.tier_fee end as eff_tier_fee,
         case when r.pricing_type = 'VOLUME' then l.latest_tier_is_percentage else r.tier_is_percentage end as eff_tier_is_percentage
-    from reindexed r
+    from tier_selected r
     left join latest_volume_tier l
       on r.transaction_month = l.transaction_month
      and r.client_id = l.client_id
@@ -251,24 +237,21 @@ select
     utc_created_at,
     transaction_month,
     transaction_count,
-
     amount,
     price_structure_json,
     to_number(price_minimum_revenue, 10, 2) as price_minimum_revenue,
-
     pricing_type,
     case 
         when pricing_type = 'LINEAR' then linear_is_percentage
         when pricing_type in ('VOLUME', 'GRADUATED') then eff_tier_is_percentage
         else null
     end as is_percentage,
-
     case 
         when pricing_type = 'LINEAR' then linear_price_per_unit
-        when pricing_type in ('VOLUME', 'GRADUATED') then eff_tier_price
+        when pricing_type = 'VOLUME' then eff_tier_price
+        when pricing_type = 'GRADUATED' then tier_price
         else null
     end as price_per_unit,
-
     revenue,
     cumulative_revenue,
     cumulative_revenue_before,
