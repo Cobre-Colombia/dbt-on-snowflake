@@ -235,3 +235,4 @@ select
     regla_numero,
     revenue_calculation_details
 from revenue_structured
+
