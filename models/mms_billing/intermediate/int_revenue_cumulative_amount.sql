@@ -17,7 +17,7 @@ ranked as (
         row_number() over (
             partition by matched_product_name, client_id, transaction_month
             order by utc_created_at, mm_id
-        ) as transaction_count
+        ) as pre_tier_transaction_count
     from with_date
 ),
 
@@ -40,7 +40,7 @@ tiers as (
         r.matched_product_name,
         r.price_structure_json,
         r.price_minimum_amount,
-        r.transaction_count,
+        r.pre_tier_transaction_count,
         r.global_transaction_order,
         t.value:price::float as tier_price,
         t.value:fee::float as tier_fee,
@@ -61,7 +61,7 @@ exploded as (
             order by
                 case
                     when tier_upper_bound is null then 2
-                    when tier_upper_bound >= transaction_count then 1
+                    when tier_upper_bound >= pre_tier_transaction_count then 1
                     else 3
                 end,
                 tier_upper_bound
@@ -76,6 +76,16 @@ exploded_filtered as (
     where tier_rank = 1
 ),
 
+reindexed as (
+    select
+        *,
+        row_number() over (
+            partition by matched_product_name, client_id, transaction_month
+            order by utc_created_at, mm_id
+        ) as transaction_count
+    from exploded_filtered
+),
+
 latest_volume_tier as (
     select distinct
         transaction_month,
@@ -86,21 +96,21 @@ latest_volume_tier as (
         max_by(tier_fee, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_fee,
         max_by(tier_is_percentage, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_is_percentage,
         max_by(tier_upper_bound, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_upper_bound
-    from exploded_filtered
+    from reindexed
     where pricing_type = 'VOLUME'
 ),
 
 adjusted as (
     select
-        e.*,
-        case when e.pricing_type = 'VOLUME' then l.latest_tier_price else e.tier_price end as eff_tier_price,
-        case when e.pricing_type = 'VOLUME' then l.latest_tier_fee else e.tier_fee end as eff_tier_fee,
-        case when e.pricing_type = 'VOLUME' then l.latest_tier_is_percentage else e.tier_is_percentage end as eff_tier_is_percentage
-    from exploded_filtered e
+        r.*,
+        case when r.pricing_type = 'VOLUME' then l.latest_tier_price else r.tier_price end as eff_tier_price,
+        case when r.pricing_type = 'VOLUME' then l.latest_tier_fee else r.tier_fee end as eff_tier_fee,
+        case when r.pricing_type = 'VOLUME' then l.latest_tier_is_percentage else r.tier_is_percentage end as eff_tier_is_percentage
+    from reindexed r
     left join latest_volume_tier l
-      on e.transaction_month = l.transaction_month
-     and e.client_id = l.client_id
-     and e.matched_product_name = l.matched_product_name
+      on r.transaction_month = l.transaction_month
+     and r.client_id = l.client_id
+     and r.matched_product_name = l.matched_product_name
 ),
 
 calc as (
@@ -244,7 +254,7 @@ select
 
     amount,
     price_structure_json,
-    price_minimum_revenue,
+    to_number(price_minimum_revenue, 10, 2) as price_minimum_revenue,
 
     pricing_type,
     case 

@@ -7,11 +7,18 @@ with invoice as (
         on i.customer_id = c.id
     where 1 = 1
         and (
-            c.customer_aliases = '{{ var('client_id') }}'
-            or c.customer_aliases like '{{ var('client_id') }},%'
-            or c.customer_aliases like '%,{{ var('client_id') }}'
-            or c.customer_aliases like '%,{{ var('client_id') }},%'
+            c.customer_aliases in (
+                {% for cid in var('client_id') %}
+                    '{{ cid }}'{% if not loop.last %}, {% endif %}
+                {% endfor %}
+            )
+            {% for cid in var('client_id') %}
+                or c.customer_aliases like '{{ cid }},%'
+                or c.customer_aliases like '%,{{ cid }}'
+                or c.customer_aliases like '%,{{ cid }},%'
+            {% endfor %}
         )
+
         and billing_period_start :: date = '{{ var('billing_period_start') }}'
         and billing_period_end   :: date = '{{ var('billing_period_end') }}'
 ),

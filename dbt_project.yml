@@ -14,7 +14,7 @@ clean-targets:
   - "dbt_packages"
 
 vars:
-  client_id: "cli_3qjccqlafg"
+  client_id: ["cli_3qjccqlafg", "cli_bfvtnspza2", "cli_qqor9ztpcp", "cli_in4j1s6zuq"]
   billing_period_start: "2025-05-01"
   billing_period_end: "2025-05-31"
 
