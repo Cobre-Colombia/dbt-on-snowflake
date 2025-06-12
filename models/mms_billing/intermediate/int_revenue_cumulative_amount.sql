@@ -8,6 +8,7 @@ with with_date as (
         price_structure_json,
         price_minimum_amount,
         consumes_saas,
+        should_be_charged,
         date_trunc('month', utc_created_at) as transaction_month
     from {{ ref('int_mms_with_rules') }}
 ),
@@ -29,7 +30,7 @@ ranked as (
 linear_pricing as (
     select
         mm_id, amount, client_id, utc_created_at, matched_product_name,
-        price_structure_json, price_minimum_amount, consumes_saas, transaction_month,
+        price_structure_json, price_minimum_amount, consumes_saas, should_be_charged, transaction_month,
         transaction_count, global_transaction_order,
         price_structure_json:pricePerUnit::float as linear_price_per_unit,
         price_structure_json:isPricePercentage::boolean as linear_is_percentage,
@@ -45,7 +46,7 @@ linear_pricing as (
 tiered_pricing_raw as (
     select
         r.mm_id, r.amount, r.client_id, r.utc_created_at, r.matched_product_name,
-        r.price_structure_json, r.price_minimum_amount, r.consumes_saas, r.transaction_month,
+        r.price_structure_json, r.price_minimum_amount, r.consumes_saas, r.should_be_charged, r.transaction_month,
         r.transaction_count, r.global_transaction_order,
         null::float as linear_price_per_unit,
         null::boolean as linear_is_percentage,
@@ -117,6 +118,7 @@ calc as (
     select
         *,
         case 
+            when not should_be_charged then 0
             when pricing_type = 'LINEAR' and linear_is_percentage then amount * (linear_price_per_unit / 100)
             when pricing_type = 'LINEAR' and not linear_is_percentage then linear_price_per_unit
             when pricing_type = 'VOLUME' and eff_tier_is_percentage then (amount * (eff_tier_price / 100)) + coalesce(eff_tier_fee, 0)
@@ -155,13 +157,13 @@ ranked_revenue as (
             rows between unbounded preceding and 1 preceding
         ) as cumulative_revenue_global_before,
 
-        sum(case when consumes_saas then revenue else 0 end) over (
+        sum(case when consumes_saas and should_be_charged then revenue else 0 end) over (
             partition by client_id, transaction_month
             order by global_transaction_order
             rows between unbounded preceding and current row
         ) as cumulative_saas_revenue_global,
 
-        sum(case when consumes_saas then revenue else 0 end) over (
+        sum(case when consumes_saas and should_be_charged then revenue else 0 end) over (
             partition by client_id, transaction_month
             order by global_transaction_order
             rows between unbounded preceding and 1 preceding
@@ -184,6 +186,7 @@ calc_with_flags as (
         g.price_minimum_revenue,
 
         case
+            when not should_be_charged then 0
             when not consumes_saas then 0
             when cumulative_saas_revenue_global_before >= coalesce(g.price_minimum_revenue, 0) then 0
             when cumulative_saas_revenue_global > coalesce(g.price_minimum_revenue, 0) then
@@ -192,6 +195,7 @@ calc_with_flags as (
         end as saas_revenue,
 
         case
+            when not should_be_charged then 0
             when not consumes_saas then revenue
             when cumulative_saas_revenue_global > coalesce(g.price_minimum_revenue, 0) then
                 revenue - greatest(coalesce(g.price_minimum_revenue, 0) - coalesce(cumulative_saas_revenue_global_before, 0), 0)
@@ -201,6 +205,7 @@ calc_with_flags as (
         greatest(coalesce(g.price_minimum_revenue, 0) - coalesce(cumulative_saas_revenue_global, 0), 0) as remaining_minimum,
 
         case
+            when not should_be_charged then 'excluded'
             when not consumes_saas then 'non_consuming'
             when saas_revenue > 0 and not_saas_revenue = 0 then 'saas'
             when saas_revenue = 0 and not_saas_revenue > 0 then 'post_minimum'
@@ -225,6 +230,7 @@ select
     to_number(price_minimum_revenue, 10, 2) as price_minimum_revenue,
     pricing_type,
     consumes_saas,
+    should_be_charged,
     case 
         when pricing_type = 'LINEAR' then linear_is_percentage
         when pricing_type in ('VOLUME', 'GRADUATED') then eff_tier_is_percentage
