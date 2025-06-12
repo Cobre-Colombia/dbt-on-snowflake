@@ -22,28 +22,79 @@ ranked as (
     from with_date
 ),
 
-exploded as (
+tiers as (
     select
         r.*,
-        upper(r.price_structure_json:pricingType::string) as pricing_type,
-        r.price_structure_json:isPricePercentage::boolean as linear_is_percentage,
-        r.price_structure_json:pricePerUnit::float as linear_price_per_unit,
         t.value:price::float as tier_price,
         t.value:fee::float as tier_fee,
         t.value:upperBound::int as tier_upper_bound,
-        t.value:isPricePercentage::boolean as tier_is_percentage,
-        row_number() over (
-            partition by r.mm_id, r.matched_product_name
-            order by
-                case
-                    when t.value:upperBound is null then 2
-                    when t.value:upperBound::int >= r.transaction_count then 1
-                    else 3
-                end,
-                t.value:upperBound::int
-        ) as tier_rank
+        t.value:isPricePercentage::boolean as tier_is_percentage
     from ranked r
     left join lateral flatten(input => r.price_structure_json:tiers) t
+),
+
+exploded as (
+    select * from (
+        select
+            *,
+            upper(price_structure_json:pricingType::string) as pricing_type,
+            price_structure_json:isPricePercentage::boolean as linear_is_percentage,
+            price_structure_json:pricePerUnit::float as linear_price_per_unit,
+            row_number() over (
+                partition by mm_id, matched_product_name
+                order by
+                    case
+                        when tier_upper_bound is null then 2
+                        when tier_upper_bound >= transaction_count then 1
+                        else 3
+                    end,
+                    tier_upper_bound
+            ) as tier_rank
+        from tiers
+    )
+    where tier_rank = 1
+),
+
+latest_volume_tier as (
+    select distinct
+        transaction_month,
+        client_id,
+        matched_product_name,
+        pricing_type,
+        max_by(tier_price, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_price,
+        max_by(tier_fee, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_fee,
+        max_by(tier_is_percentage, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_is_percentage,
+        max_by(tier_upper_bound, transaction_count) over (partition by transaction_month, client_id, matched_product_name) as latest_tier_upper_bound
+    from exploded
+),
+
+adjusted as (
+    select
+        e.*,
+        case
+            when l.pricing_type = 'VOLUME' then l.latest_tier_price
+            else e.tier_price
+        end as eff_tier_price,
+
+        case
+            when l.pricing_type = 'VOLUME' then l.latest_tier_fee
+            else e.tier_fee
+        end as eff_tier_fee,
+
+        case
+            when l.pricing_type = 'VOLUME' then l.latest_tier_is_percentage
+            else e.tier_is_percentage
+        end as eff_tier_is_percentage,
+
+        case
+            when l.pricing_type = 'VOLUME' then l.latest_tier_upper_bound
+            else e.tier_upper_bound
+        end as eff_tier_upper_bound,
+    from exploded e
+    left join latest_volume_tier l
+      on e.transaction_month = l.transaction_month
+     and e.client_id = l.client_id
+     and e.matched_product_name = l.matched_product_name
 ),
 
 calc as (
@@ -53,14 +104,13 @@ calc as (
         case 
             when pricing_type = 'LINEAR' and linear_is_percentage = true then amount * (linear_price_per_unit / 100)
             when pricing_type = 'LINEAR' and linear_is_percentage = false then linear_price_per_unit
-            when pricing_type = 'VOLUME' and tier_is_percentage = true then (amount * (tier_price / 100)) + coalesce(tier_fee, 0)
-            when pricing_type = 'VOLUME' and tier_is_percentage = false then tier_price + coalesce(tier_fee, 0)
+            when pricing_type = 'VOLUME' and eff_tier_is_percentage = true then (amount * (eff_tier_price / 100)) + coalesce(eff_tier_fee, 0)
+            when pricing_type = 'VOLUME' and eff_tier_is_percentage = false then eff_tier_price + coalesce(eff_tier_fee, 0)
             when pricing_type = 'GRADUATED' and tier_is_percentage = true then (amount * (tier_price / 100)) + coalesce(tier_fee, 0)
             when pricing_type = 'GRADUATED' and tier_is_percentage = false then tier_price + coalesce(tier_fee, 0)
             else 0
         end as revenue
-    from exploded
-    where pricing_type = 'LINEAR' or tier_rank = 1
+    from adjusted
 ),
 
 ranked_revenue as (
@@ -120,17 +170,17 @@ revenue_structured as (
                 'pricing_type', pricing_type,
                 'tier_selected', 
                     case when pricing_type = 'VOLUME' then 
-                        'Tier: hasta ' || coalesce(tier_upper_bound::string, 'Sin límite') || ' transacciones'
+                        'Tier: hasta ' || coalesce(eff_tier_upper_bound::string, 'Sin límite') || ' transacciones'
                     else null end,
                 'is_percentage', 
                     case when pricing_type = 'LINEAR' then linear_is_percentage
-                         when pricing_type = 'VOLUME' then tier_is_percentage
+                         when pricing_type = 'VOLUME' then eff_tier_is_percentage
                          when pricing_type = 'GRADUATED' then tier_is_percentage
                          else null end,
                 'price', 
-                    to_number(coalesce(tier_price, linear_price_per_unit), 10, 2),
+                    to_number(coalesce(eff_tier_price, linear_price_per_unit), 10, 2),
                 'fee', 
-                    to_number(coalesce(tier_fee, 0), 10, 2),
+                    to_number(coalesce(eff_tier_fee, 0), 10, 2),
                 'transaction_amount', to_number(amount, 18, 2),
                 'transaction_count', transaction_count,
                 'cumulative_revenue', to_number(cumulative_revenue, 18, 2),
@@ -159,20 +209,20 @@ select
     pricing_type,
     case 
         when pricing_type = 'LINEAR' then linear_is_percentage
-        when pricing_type in ('VOLUME', 'GRADUATED') then tier_is_percentage
+        when pricing_type in ('VOLUME', 'GRADUATED') then eff_tier_is_percentage
         else null
     end as is_percentage,
 
     case 
         when pricing_type = 'LINEAR' then linear_price_per_unit
-        when pricing_type in ('VOLUME', 'GRADUATED') then tier_price
+        when pricing_type in ('VOLUME', 'GRADUATED') then eff_tier_price
         else null
     end as price_per_unit,
 
-    tier_price as volume_price,
-    tier_fee as volume_fee,
-    tier_upper_bound as volume_upper_bound,
-    tier_is_percentage as volume_is_percentage,
+    eff_tier_price as volume_price,
+    eff_tier_fee as volume_fee,
+    eff_tier_upper_bound as volume_upper_bound,
+    eff_tier_is_percentage as volume_is_percentage,
 
     revenue,
     cumulative_revenue,
