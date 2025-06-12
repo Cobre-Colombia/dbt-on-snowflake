@@ -73,7 +73,7 @@ rules_joined as (
     union all
     select * from {{ ref('stg_payin_mms') }}
     union all
-    select * from {{ ref('stg_dag_mms') }}
+    select * from {{ ref('stg_dac_mms') }}
     union all
     select * from {{ ref('stg_balance_recharges') }}
 ),
