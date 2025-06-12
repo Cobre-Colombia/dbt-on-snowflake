@@ -88,10 +88,10 @@ tier_ranked as (
                 case
                     when pricing_type = 'GRADUATED' and tier_upper_bound is not null and transaction_count <= tier_upper_bound then 1
                     when pricing_type = 'GRADUATED' and tier_upper_bound is null then 2
-                    when pricing_type = 'VOLUME' and (tier_upper_bound is null or transaction_count <= tier_upper_bound) then 3
+                    when pricing_type = 'VOLUME' and tier_upper_bound is not null and transaction_count <= tier_upper_bound then 1
+                    when pricing_type = 'VOLUME' and tier_upper_bound is null then 3
                     else 4
-                end,
-                tier_upper_bound desc
+                end asc
         ) as tier_rank
     from pricing_all
 ),
