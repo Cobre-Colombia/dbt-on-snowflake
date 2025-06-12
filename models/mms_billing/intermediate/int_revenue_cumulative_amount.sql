@@ -121,26 +121,51 @@ ranked_revenue as (
             partition by matched_product_name, client_id, transaction_month
             order by utc_created_at, mm_id
             rows between unbounded preceding and 1 preceding
-        ) as cumulative_revenue_before
+        ) as cumulative_revenue_before,
+
+        sum(revenue) over (
+            partition by client_id, transaction_month
+            order by utc_created_at, mm_id
+            rows between unbounded preceding and current row
+        ) as cumulative_revenue_global,
+
+        sum(revenue) over (
+            partition by client_id, transaction_month
+            order by utc_created_at, mm_id
+            rows between unbounded preceding and 1 preceding
+        ) as cumulative_revenue_global_before
     from calc
+),
+
+global_minimums as (
+    select
+        client_id,
+        transaction_month,
+        max(price_minimum_amount) as price_minimum_revenue
+    from with_date
+    group by client_id, transaction_month
 ),
 
 calc_with_flags as (
     select
-        *,
+        r.*,
+        g.price_minimum_revenue,
+
         case
-            when cumulative_revenue_before >= coalesce(price_minimum_amount, 0) then 0
-            when cumulative_revenue > coalesce(price_minimum_amount, 0) then
-                coalesce(price_minimum_amount, 0) - coalesce(cumulative_revenue_before, 0)
+            when cumulative_revenue_global_before >= coalesce(g.price_minimum_revenue, 0) then 0
+            when cumulative_revenue_global > coalesce(g.price_minimum_revenue, 0) then
+                coalesce(g.price_minimum_revenue, 0) - coalesce(cumulative_revenue_global_before, 0)
             else revenue
         end as saas_revenue,
 
         case
-            when cumulative_revenue > coalesce(price_minimum_amount, 0) then
-                revenue - greatest(coalesce(price_minimum_amount, 0) - coalesce(cumulative_revenue_before, 0), 0)
+            when cumulative_revenue_global > coalesce(g.price_minimum_revenue, 0) then
+                revenue - greatest(coalesce(g.price_minimum_revenue, 0) - coalesce(cumulative_revenue_global_before, 0), 0)
             else 0
         end as not_saas_revenue
-    from ranked_revenue
+    from ranked_revenue r
+    left join global_minimums g
+      on r.client_id = g.client_id and r.transaction_month = g.transaction_month
 ),
 
 revenue_structured as (
@@ -153,11 +178,8 @@ revenue_structured as (
             else null
         end as revenue_type,
 
-        to_number(price_minimum_amount, 10, 2) as price_minimum_revenue,
-
         array_construct(
             object_construct_keep_null(
-                -- Identificación y regla
                 'match_name', matched_product_name,
                 'pricing_type', pricing_type,
                 'formula_applied',
@@ -170,8 +192,6 @@ revenue_structured as (
                         when pricing_type = 'GRADUATED' and not tier_is_percentage then 'tier_price + fee'
                         else 'unknown'
                     end,
-
-                -- Parámetros de pricing aplicados
                 'is_percentage',
                     case when pricing_type = 'LINEAR' then linear_is_percentage
                          when pricing_type = 'VOLUME' then eff_tier_is_percentage
@@ -183,12 +203,8 @@ revenue_structured as (
                          when pricing_type = 'GRADUATED' then tier_price
                          else null end, 10, 2),
                 'fee', to_number(coalesce(eff_tier_fee, tier_fee, 0), 10, 2),
-
-                -- Datos de transacción
                 'transaction_amount', to_number(amount, 18, 2),
                 'transaction_count', transaction_count,
-
-                -- Resultados
                 'revenue', to_number(revenue, 18, 2),
                 'cumulative_revenue', to_number(cumulative_revenue, 18, 2),
                 'saas_revenue', to_number(saas_revenue, 18, 2),
