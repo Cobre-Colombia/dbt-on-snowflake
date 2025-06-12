@@ -157,8 +157,21 @@ revenue_structured as (
 
         array_construct(
             object_construct_keep_null(
+                -- Identificación y regla
                 'match_name', matched_product_name,
                 'pricing_type', pricing_type,
+                'formula_applied',
+                    case
+                        when pricing_type = 'LINEAR' and linear_is_percentage then 'amount * (price_per_unit / 100)'
+                        when pricing_type = 'LINEAR' and not linear_is_percentage then 'fixed price_per_unit'
+                        when pricing_type = 'VOLUME' and eff_tier_is_percentage then 'amount * (tier_price / 100) + fee'
+                        when pricing_type = 'VOLUME' and not eff_tier_is_percentage then 'tier_price + fee'
+                        when pricing_type = 'GRADUATED' and tier_is_percentage then 'amount * (tier_price / 100) + fee'
+                        when pricing_type = 'GRADUATED' and not tier_is_percentage then 'tier_price + fee'
+                        else 'unknown'
+                    end,
+
+                -- Parámetros de pricing aplicados
                 'is_percentage',
                     case when pricing_type = 'LINEAR' then linear_is_percentage
                          when pricing_type = 'VOLUME' then eff_tier_is_percentage
@@ -170,10 +183,14 @@ revenue_structured as (
                          when pricing_type = 'GRADUATED' then tier_price
                          else null end, 10, 2),
                 'fee', to_number(coalesce(eff_tier_fee, tier_fee, 0), 10, 2),
+
+                -- Datos de transacción
                 'transaction_amount', to_number(amount, 18, 2),
                 'transaction_count', transaction_count,
-                'cumulative_revenue', to_number(cumulative_revenue, 18, 2),
+
+                -- Resultados
                 'revenue', to_number(revenue, 18, 2),
+                'cumulative_revenue', to_number(cumulative_revenue, 18, 2),
                 'saas_revenue', to_number(saas_revenue, 18, 2),
                 'not_saas_revenue', to_number(not_saas_revenue, 18, 2),
                 'revenue_type',
@@ -182,16 +199,6 @@ revenue_structured as (
                         when saas_revenue = 0 and not_saas_revenue > 0 then 'post_minimum'
                         when saas_revenue > 0 and not_saas_revenue > 0 then 'mixed'
                         else null
-                    end,
-                'formula_applied',
-                    case
-                        when pricing_type = 'LINEAR' and linear_is_percentage then 'amount * (price_per_unit / 100)'
-                        when pricing_type = 'LINEAR' and not linear_is_percentage then 'fixed price_per_unit'
-                        when pricing_type = 'VOLUME' and eff_tier_is_percentage then 'amount * (tier_price / 100) + fee'
-                        when pricing_type = 'VOLUME' and not eff_tier_is_percentage then 'tier_price + fee'
-                        when pricing_type = 'GRADUATED' and tier_is_percentage then 'amount * (tier_price / 100) + fee'
-                        when pricing_type = 'GRADUATED' and not tier_is_percentage then 'tier_price + fee'
-                        else 'unknown'
                     end
             )
         ) as revenue_calculation_details
