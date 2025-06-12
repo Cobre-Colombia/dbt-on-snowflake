@@ -36,6 +36,7 @@ union_all as (
         ili.quantity,
         ili.rate,
         um.property_filters,
+        um.properties_to_negate,
         bspp.price_structure,
         ili.currency,
         ili.net_total,
