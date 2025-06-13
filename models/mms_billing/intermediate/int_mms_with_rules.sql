@@ -6,70 +6,91 @@ with rules as (
         price_minimum_amount,
         consumes_saas,
         property_filters_json,
-        PROPERTIES_TO_NEGATE as properties_to_negate
+        parse_json(properties_to_negate) as properties_to_negate
     from {{ ref('stg_invoice_pricing') }}
+    where price_structure_json is not null
 ),
 
--- Flatten de cada campo de filtros
+negations as (
+    select
+        product_name,
+        max(iff(upper(f.value::string) = 'FLOW', true, false)) as negate_flow,
+        max(iff(upper(f.value::string) = 'TRANSACTION_TYPE', true, false)) as negate_transaction_type,
+        max(iff(upper(f.value::string) = 'ORIGINATION_SYSTEM', true, false)) as negate_origination_system,
+        max(iff(upper(f.value::string) = 'SOURCE_ACCOUNT_TYPE', true, false)) as negate_source_account_type,
+        max(iff(upper(f.value::string) = 'COUNTRY', true, false)) as negate_country,
+        max(iff(upper(f.value::string) = 'ORIGIN_BANK', true, false)) as negate_origin_bank,
+        max(iff(upper(f.value::string) = 'DESTINATION_BANK', true, false)) as negate_destination_bank,
+        max(iff(upper(f.value::string) = 'STATUS', true, false)) as negate_status
+    from rules,
+         lateral flatten(input => properties_to_negate) f
+    group by product_name
+),
+
+-- Flatten filters
 flow_flat as (
-    select product_name, f.value::string as flow
+    select product_name, upper(f.value::string) as flow_filter
     from rules, lateral flatten(input => property_filters_json:flow) f
 ),
 tx_flat as (
-    select product_name, f.value::string as transaction_type
+    select product_name, upper(f.value::string) as transaction_type_filter
     from rules, lateral flatten(input => property_filters_json:transaction_type) f
 ),
 origin_flat as (
-    select product_name, f.value::string as origination_system
+    select product_name, upper(f.value::string) as origination_system_filter
     from rules, lateral flatten(input => property_filters_json:origination_system) f
 ),
 source_flat as (
-    select product_name, f.value::string as source_account_type
+    select product_name, upper(f.value::string) as source_account_type_filter
     from rules, lateral flatten(input => property_filters_json:source_account_type) f
 ),
 country_flat as (
-    select product_name, f.value::string as country
+    select product_name, upper(f.value::string) as country_filter
     from rules, lateral flatten(input => property_filters_json:country) f
 ),
 origin_bank_flat as (
-    select product_name, f.value::string as origin_bank
+    select product_name, upper(f.value::string) as origin_bank_filter
     from rules, lateral flatten(input => property_filters_json:origin_bank) f
 ),
 destination_bank_flat as (
-    select product_name, f.value::string as destination_bank
+    select product_name, upper(f.value::string) as destination_bank_filter
     from rules, lateral flatten(input => property_filters_json:destination_bank) f
 ),
 status_flat as (
-    select product_name, f.value::string as status
+    select product_name, upper(f.value::string) as status_filter
     from rules, lateral flatten(input => property_filters_json:status) f
 ),
 
-rules_joined as (
-    select
+-- Expand rules with all properties
+rules_expanded as (
+    select distinct
         r.client_id,
         r.product_name,
         r.price_structure_json,
         r.price_minimum_amount,
         r.consumes_saas,
-        flow_flat.flow,
-        tx_flat.transaction_type,
-        origin_flat.origination_system,
-        source_flat.source_account_type,
-        country_flat.country,
-        origin_bank_flat.origin_bank,
-        destination_bank_flat.destination_bank,
-        status_flat.status,
+        r.property_filters_json,
+        r.properties_to_negate,
 
-        -- Negation flags
-        array_contains(coalesce(r.properties_to_negate::array, []), to_variant('flow')) as negate_flow,
-        array_contains(coalesce(r.properties_to_negate::array, []), to_variant('transaction_type')) as negate_transaction_type,
-        array_contains(coalesce(r.properties_to_negate::array, []), to_variant('origination_system')) as negate_origination_system,
-        array_contains(coalesce(r.properties_to_negate::array, []), to_variant('source_account_type')) as negate_source_account_type,
-        array_contains(coalesce(r.properties_to_negate::array, []), to_variant('country')) as negate_country,
-        array_contains(coalesce(r.properties_to_negate::array, []), to_variant('origin_bank')) as negate_origin_bank,
-        array_contains(coalesce(r.properties_to_negate::array, []), to_variant('destination_bank')) as negate_destination_bank,
-        array_contains(coalesce(r.properties_to_negate::array, []), to_variant('status')) as negate_status
+        nf.negate_flow,
+        nf.negate_transaction_type,
+        nf.negate_origination_system,
+        nf.negate_source_account_type,
+        nf.negate_country,
+        nf.negate_origin_bank,
+        nf.negate_destination_bank,
+        nf.negate_status,
+
+        flow_filter,
+        transaction_type_filter,
+        origination_system_filter,
+        source_account_type_filter,
+        country_filter,
+        origin_bank_filter,
+        destination_bank_filter,
+        status_filter
     from rules r
+    left join negations nf on r.product_name = nf.product_name
     left join flow_flat on r.product_name = flow_flat.product_name
     left join tx_flat on r.product_name = tx_flat.product_name
     left join origin_flat on r.product_name = origin_flat.product_name
@@ -82,85 +103,109 @@ rules_joined as (
 
 mm as (
     select * from {{ ref('stg_payouts_mms') }}
-    union all
-    select * from {{ ref('stg_payin_mms') }}
-    union all
-    select * from {{ ref('stg_dac_mms') }}
-    union all
-    select * from {{ ref('stg_balance_recharges') }}
+    union all select * from {{ ref('stg_payin_mms') }}
+    union all select * from {{ ref('stg_dac_mms') }}
+    union all select * from {{ ref('stg_balance_recharges') }}
 ),
 
-matched as (
-    select
-        mm.mm_id,
-        mm.client_id,
-        rf.product_name as matched_product_name,
-        rf.price_structure_json,
-        rf.price_minimum_amount,
-        rf.consumes_saas,
-
-        (
-            rf.negate_flow OR
-            rf.negate_transaction_type OR
-            rf.negate_origination_system OR
-            rf.negate_source_account_type OR
-            rf.negate_country OR
-            rf.negate_origin_bank OR
-            rf.negate_destination_bank OR
-            rf.negate_status
-        ) as negate_applied
-
-    from mm
-    join rules_joined rf
-      on (rf.flow is null or (
-            (not rf.negate_flow and upper(mm.flow) = upper(rf.flow)) or
-            (rf.negate_flow and upper(mm.flow) != upper(rf.flow))
-         ))
-     and (rf.transaction_type is null or (
-            (not rf.negate_transaction_type and upper(mm.transaction_type) = upper(rf.transaction_type)) or
-            (rf.negate_transaction_type and upper(mm.transaction_type) != upper(rf.transaction_type))
-         ))
-     and (rf.origination_system is null or (
-            (not rf.negate_origination_system and upper(mm.origination_system) = upper(rf.origination_system)) or
-            (rf.negate_origination_system and upper(mm.origination_system) != upper(rf.origination_system))
-         ))
-     and (rf.source_account_type is null or (
-            (not rf.negate_source_account_type and upper(mm.source_account_type) = upper(rf.source_account_type)) or
-            (rf.negate_source_account_type and upper(mm.source_account_type) != upper(rf.source_account_type))
-         ))
-     and (rf.country is null or (
-            (not rf.negate_country and upper(mm.country) = upper(rf.country)) or
-            (rf.negate_country and upper(mm.country) != upper(rf.country))
-         ))
-     and (rf.origin_bank is null or (
-            (not rf.negate_origin_bank and upper(mm.origin_bank) = upper(rf.origin_bank)) or
-            (rf.negate_origin_bank and upper(mm.origin_bank) != upper(rf.origin_bank))
-         ))
-     and (rf.destination_bank is null or (
-            (not rf.negate_destination_bank and upper(mm.destination_bank) = upper(rf.destination_bank)) or
-            (rf.negate_destination_bank and upper(mm.destination_bank) != upper(rf.destination_bank))
-         ))
-     and (rf.status is null or (
-            (not rf.negate_status and upper(mm.status) = upper(rf.status)) or
-            (rf.negate_status and upper(mm.status) != upper(rf.status))
-         ))
-     and mm.client_id = rf.client_id
-),
-
-final as (
+matched_raw as (
     select
         mm.*,
-        m.matched_product_name,
-        m.price_structure_json,
-        m.price_minimum_amount,
-        m.consumes_saas,
-        case when m.matched_product_name is not null then true else false end as should_be_charged,
-        m.negate_applied
+        rx.product_name as matched_product_name,
+        rx.price_structure_json,
+        rx.price_minimum_amount,
+        rx.consumes_saas,
+        rx.property_filters_json,
+        rx.properties_to_negate,
+
+        rx.flow_filter,
+        rx.transaction_type_filter,
+        rx.origination_system_filter,
+        rx.source_account_type_filter,
+        rx.country_filter,
+        rx.origin_bank_filter,
+        rx.destination_bank_filter,
+        rx.status_filter,
+
+        (rx.negate_flow and upper(mm.flow) = rx.flow_filter) as negate_flow_match,
+        (rx.negate_transaction_type and upper(mm.transaction_type) = rx.transaction_type_filter) as negate_transaction_type_match,
+        (rx.negate_origination_system and upper(mm.origination_system) = rx.origination_system_filter) as negate_origination_system_match,
+        (rx.negate_source_account_type and upper(mm.source_account_type) = rx.source_account_type_filter) as negate_source_account_type_match,
+        (rx.negate_country and upper(mm.country) = rx.country_filter) as negate_country_match,
+        (rx.negate_origin_bank and upper(mm.origin_bank) = rx.origin_bank_filter) as negate_origin_bank_match,
+        (rx.negate_destination_bank and upper(mm.destination_bank) = rx.destination_bank_filter) as negate_destination_bank_match,
+        (rx.negate_status and upper(mm.status) = rx.status_filter) as negate_status_match,
+
+        (
+            (rx.negate_flow and upper(mm.flow) = rx.flow_filter) or
+            (rx.negate_transaction_type and upper(mm.transaction_type) = rx.transaction_type_filter) or
+            (rx.negate_origination_system and upper(mm.origination_system) = rx.origination_system_filter) or
+            (rx.negate_source_account_type and upper(mm.source_account_type) = rx.source_account_type_filter) or
+            (rx.negate_country and upper(mm.country) = rx.country_filter) or
+            (rx.negate_origin_bank and upper(mm.origin_bank) = rx.origin_bank_filter) or
+            (rx.negate_destination_bank and upper(mm.destination_bank) = rx.destination_bank_filter) or
+            (rx.negate_status and upper(mm.status) = rx.status_filter)
+        ) as negate_applied,
+
+        array_to_string(array_construct_compact(
+            iff(upper(mm.flow) = rx.flow_filter, 'FLOW', null),
+            iff(upper(mm.transaction_type) = rx.transaction_type_filter, 'TRANSACTION_TYPE', null),
+            iff(upper(mm.origination_system) = rx.origination_system_filter, 'ORIGINATION_SYSTEM', null),
+            iff(upper(mm.source_account_type) = rx.source_account_type_filter, 'SOURCE_ACCOUNT_TYPE', null),
+            iff(upper(mm.country) = rx.country_filter, 'COUNTRY', null),
+            iff(upper(mm.origin_bank) = rx.origin_bank_filter, 'ORIGIN_BANK', null),
+            iff(upper(mm.destination_bank) = rx.destination_bank_filter, 'DESTINATION_BANK', null),
+            iff(upper(mm.status) = rx.status_filter, 'STATUS', null)
+        ), ', ') as match_reason
     from mm
-    left join matched m
-      on mm.mm_id = m.mm_id
-     and mm.client_id = m.client_id
+    join rules_expanded rx
+      on mm.client_id = rx.client_id
+     and (
+         (rx.flow_filter is not null and upper(mm.flow) = rx.flow_filter) or
+         (rx.transaction_type_filter is not null and upper(mm.transaction_type) = rx.transaction_type_filter) or
+         (rx.origination_system_filter is not null and upper(mm.origination_system) = rx.origination_system_filter) or
+         (rx.source_account_type_filter is not null and upper(mm.source_account_type) = rx.source_account_type_filter) or
+         (rx.country_filter is not null and upper(mm.country) = rx.country_filter) or
+         (rx.origin_bank_filter is not null and upper(mm.origin_bank) = rx.origin_bank_filter) or
+         (rx.destination_bank_filter is not null and upper(mm.destination_bank) = rx.destination_bank_filter) or
+         (rx.status_filter is not null and upper(mm.status) = rx.status_filter)
+     )
+),
+
+matched_with_priority as (
+    select *,
+        (
+            iff(flow_filter is not null and upper(flow) = flow_filter, 1, 0) +
+            iff(transaction_type_filter is not null and upper(transaction_type) = transaction_type_filter, 1, 0) +
+            iff(origination_system_filter is not null and upper(origination_system) = origination_system_filter, 1, 0) +
+            iff(source_account_type_filter is not null and upper(source_account_type) = source_account_type_filter, 1, 0) +
+            iff(country_filter is not null and upper(country) = country_filter, 1, 0) +
+            iff(origin_bank_filter is not null and upper(origin_bank) = origin_bank_filter, 1, 0) +
+            iff(destination_bank_filter is not null and upper(destination_bank) = destination_bank_filter, 1, 0) +
+            iff(status_filter is not null and upper(status) = status_filter, 1, 0)
+        ) as raw_score,
+        case when negate_applied then -1 else
+            (
+                iff(flow_filter is not null and upper(flow) = flow_filter, 1, 0) +
+                iff(transaction_type_filter is not null and upper(transaction_type) = transaction_type_filter, 1, 0) +
+                iff(origination_system_filter is not null and upper(origination_system) = origination_system_filter, 1, 0) +
+                iff(source_account_type_filter is not null and upper(source_account_type) = source_account_type_filter, 1, 0) +
+                iff(country_filter is not null and upper(country) = country_filter, 1, 0) +
+                iff(origin_bank_filter is not null and upper(origin_bank) = origin_bank_filter, 1, 0) +
+                iff(destination_bank_filter is not null and upper(destination_bank) = destination_bank_filter, 1, 0) +
+                iff(status_filter is not null and upper(status) = status_filter, 1, 0)
+            )
+        end as match_score
+    from matched_raw
+),
+
+ranked as (
+    select *,
+        rank() over (partition by mm_id order by raw_score desc) as rank_by_raw
+    from matched_with_priority
 )
 
-select distinct * from final
-where price_structure_json is not null
+select *,
+    coalesce(not negate_applied, true) as should_be_charged
+from ranked
+where rank_by_raw = 1
