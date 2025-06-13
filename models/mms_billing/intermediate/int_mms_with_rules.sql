@@ -204,8 +204,34 @@ ranked as (
         rank() over (partition by mm_id order by raw_score desc) as rank_by_raw
     from matched_with_priority
 )
+, resultado_final as (
+    select *,
+        coalesce(not negate_applied, true) as should_be_charged
+    from ranked
+    where rank_by_raw = 1
+)
 
-select *,
-    coalesce(not negate_applied, true) as should_be_charged
-from ranked
-where rank_by_raw = 1
+, resultado_final_filtrado as (
+    select *,
+        case
+            when upper(transaction_type_filter) is not null
+              and upper(transaction_type_filter) != upper(transaction_type)
+            then 1
+            else 0
+        end as tx_type_mismatch
+    from resultado_final
+),
+resultado_final_ranked as (
+    select *,
+        row_number() over (
+            partition by matched_product_name, tx_type_mismatch
+            order by eventtimestamp
+        ) as rn
+    from resultado_final_filtrado
+)
+select distinct *
+from resultado_final_ranked
+where 
+    tx_type_mismatch = 0
+    or (tx_type_mismatch = 1 and rn = 1)
+
