@@ -1,6 +1,8 @@
 with rules as (
     select
         client_id,
+        sequence_customer_id,
+        group_id,
         product_name,
         price_structure_json,
         price_minimum_amount,
@@ -65,6 +67,8 @@ status_flat as (
 rules_expanded as (
     select distinct
         r.client_id,
+        r.sequence_customer_id,
+        r.group_id,
         r.product_name,
         r.price_structure_json,
         r.price_minimum_amount,
@@ -117,6 +121,8 @@ matched_raw as (
         rx.consumes_saas,
         rx.property_filters_json,
         rx.properties_to_negate,
+        rx.sequence_customer_id,
+        rx.group_id,
 
         rx.flow_filter,
         rx.transaction_type_filter,

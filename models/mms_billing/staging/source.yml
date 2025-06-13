@@ -32,3 +32,5 @@ sources:
         description: "Tabla de transacciones de DAC."
       - name: BALANCE_RECHARGES
         description: "Tabla de BALANCE_RECHARGES"
+      - name: CUSTOMERS
+        description: "Tabla de clientes."

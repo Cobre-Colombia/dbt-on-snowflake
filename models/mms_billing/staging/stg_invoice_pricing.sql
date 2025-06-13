@@ -1,10 +1,14 @@
 with invoice as (
     select
         c.customer_aliases,
-        i.id
+        i.id,
+        c.id as sequence_customer_id,
+        so.group_id
     from {{ source('SEQUENCE', 'INVOICES') }} i
     left join {{ source('SEQUENCE', 'CUSTOMERS') }} c
         on i.customer_id = c.id
+    left join {{ source('SALES_OPS', 'CUSTOMERS') }} so
+        on c.id = so.sequence_id
     where 1 = 1
         and (
             c.customer_aliases in (
@@ -18,14 +22,15 @@ with invoice as (
                 or c.customer_aliases like '%,{{ cid }},%'
             {% endfor %}
         )
-
-        and billing_period_start :: date = '{{ var('billing_period_start') }}'
-        and billing_period_end   :: date = '{{ var('billing_period_end') }}'
+        and billing_period_start :: date = '{{ var("billing_period_start") }}'
+        and billing_period_end   :: date = '{{ var("billing_period_end") }}'
 ),
 
 union_all as (
     select
-        i.customer_aliases as client_id,
+        i.customer_aliases as raw_client_id,
+        i.sequence_customer_id,
+        i.group_id,
         ili.billing_period_start :: date as month,
         ili.invoice_id,
         ili.title,
@@ -67,6 +72,14 @@ ranked as (
             order by ua.calculated_at desc
         ) as date_numing
     from union_all ua
+),
+
+exploded as (
+    select
+        value::string as client_id,
+        r.*
+    from ranked r,
+    lateral flatten(input => split(r.raw_client_id, ','))
 )
 
 select
@@ -74,4 +87,4 @@ select
     *,
     {{ parse_json_column('PROPERTY_FILTERS') }} as property_filters_json,
     {{ parse_json_column('PRICE_STRUCTURE') }} as price_structure_json
-from ranked
+from exploded
