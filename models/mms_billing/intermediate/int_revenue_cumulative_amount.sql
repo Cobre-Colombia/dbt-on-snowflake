@@ -9,6 +9,10 @@ with with_date as (
         price_minimum_amount,
         consumes_saas,
         should_be_charged,
+        flow, transaction_type, origination_system, source_account_type,
+        country, origin_bank, destination_bank, status,
+        property_filters_json,
+        properties_to_negate,
         date_trunc('month', utc_created_at) as transaction_month
     from {{ ref('int_mms_with_rules') }}
 ),
@@ -38,7 +42,11 @@ linear_pricing as (
         null::float as tier_fee,
         null::int as tier_upper_bound,
         null::boolean as tier_is_percentage,
-        upper(price_structure_json:pricingType::string) as pricing_type
+        upper(price_structure_json:pricingType::string) as pricing_type,
+        flow, transaction_type, origination_system, source_account_type,
+        country, origin_bank, destination_bank, status,
+        property_filters_json,
+        properties_to_negate
     from ranked
     where upper(price_structure_json:pricingType::string) = 'LINEAR'
 ),
@@ -54,7 +62,11 @@ tiered_pricing_raw as (
         t.value:fee::float as tier_fee,
         t.value:upperBound::int as tier_upper_bound,
         t.value:isPricePercentage::boolean as tier_is_percentage,
-        upper(r.price_structure_json:pricingType::string) as pricing_type
+        upper(r.price_structure_json:pricingType::string) as pricing_type,
+        r.flow, r.transaction_type, r.origination_system, r.source_account_type,
+        r.country, r.origin_bank, r.destination_bank, r.status,
+        r.property_filters_json,
+        r.properties_to_negate
     from ranked r
     left join lateral flatten(input => r.price_structure_json:tiers) t
     where upper(r.price_structure_json:pricingType::string) in ('VOLUME', 'GRADUATED')
@@ -248,5 +260,10 @@ select
     saas_revenue,
     not_saas_revenue,
     revenue_type,
-    remaining_minimum
+    remaining_minimum,
+    -- adicionales solicitados
+    flow, transaction_type, origination_system, source_account_type,
+    country, origin_bank, destination_bank, status,
+    property_filters_json,
+    properties_to_negate
 from calc_with_flags
