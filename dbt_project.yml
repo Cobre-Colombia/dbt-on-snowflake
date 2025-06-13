@@ -30,5 +30,3 @@ models:
       marts:
         +materialized: table
         +schema: dbt_{{ env }}
-      +post-hook:
-         - "grant select on all views in schema dbt_{{ env }} to role data_dev_l1"

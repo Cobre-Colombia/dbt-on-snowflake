@@ -177,47 +177,57 @@ matched_raw as (
          (rx.status_filter is not null and upper(mm.status) = rx.status_filter)
      )
 ),
-
 matched_with_priority as (
     select *,
-        (
-            iff(flow_filter is not null and upper(flow) = flow_filter, 1, 0) +
-            iff(transaction_type_filter is not null and upper(transaction_type) = transaction_type_filter, 1, 0) +
-            iff(origination_system_filter is not null and upper(origination_system) = origination_system_filter, 1, 0) +
-            iff(source_account_type_filter is not null and upper(source_account_type) = source_account_type_filter, 1, 0) +
-            iff(country_filter is not null and upper(country) = country_filter, 1, 0) +
-            iff(origin_bank_filter is not null and upper(origin_bank) = origin_bank_filter, 1, 0) +
-            iff(destination_bank_filter is not null and upper(destination_bank) = destination_bank_filter, 1, 0) +
-            iff(status_filter is not null and upper(status) = status_filter, 1, 0)
-        ) as raw_score,
-        case when negate_applied then -1 else
-            (
-                iff(flow_filter is not null and upper(flow) = flow_filter, 1, 0) +
-                iff(transaction_type_filter is not null and upper(transaction_type) = transaction_type_filter, 1, 0) +
-                iff(origination_system_filter is not null and upper(origination_system) = origination_system_filter, 1, 0) +
-                iff(source_account_type_filter is not null and upper(source_account_type) = source_account_type_filter, 1, 0) +
-                iff(country_filter is not null and upper(country) = country_filter, 1, 0) +
-                iff(origin_bank_filter is not null and upper(origin_bank) = origin_bank_filter, 1, 0) +
-                iff(destination_bank_filter is not null and upper(destination_bank) = destination_bank_filter, 1, 0) +
-                iff(status_filter is not null and upper(status) = status_filter, 1, 0)
-            )
-        end as match_score
+ case
+  when (flow_filter is null or upper(flow) = flow_filter) then
+    case
+      when (transaction_type_filter is null or upper(transaction_type) = transaction_type_filter) then
+        case
+          when (origination_system_filter is null or upper(origination_system) = origination_system_filter) then
+            case
+              when (source_account_type_filter is null or upper(source_account_type) = source_account_type_filter) then
+                case
+                  when (country_filter is null or upper(country) = country_filter) then
+                    case
+                      when (origin_bank_filter is null or upper(origin_bank) = origin_bank_filter) then
+                        case
+                          when (destination_bank_filter is null or upper(destination_bank) = destination_bank_filter) then
+                            case
+                              when (status_filter is null or upper(status) = status_filter) then 8
+                              else 7
+                            end
+                          else 6
+                        end
+                      else 5
+                    end
+                  else 4
+                end
+              else 3
+            end
+          else 2
+        end
+      else 1
+    end
+  else 0
+end as sequential_match_score
+
     from matched_raw
 ),
 
 ranked as (
     select *,
-        rank() over (partition by mm_id order by raw_score desc) as rank_by_raw
+        rank() over (partition by mm_id order by sequential_match_score desc) as rank_by_seq
     from matched_with_priority
 )
-, resultado_final as (
+,
+resultado_final as (
     select *,
         coalesce(not negate_applied, true) as should_be_charged
     from ranked
-    where rank_by_raw = 1
-)
-
-, resultado_final_filtrado as (
+    where rank_by_seq = 1
+),
+resultado_final_filtrado as (
     select *,
         case
             when upper(transaction_type_filter) is not null
@@ -240,4 +250,3 @@ from resultado_final_ranked
 where 
     tx_type_mismatch = 0
     or (tx_type_mismatch = 1 and rn = 1)
-
