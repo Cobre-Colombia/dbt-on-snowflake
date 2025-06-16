@@ -6,7 +6,7 @@ with with_date as (
         flow, transaction_type, origination_system, source_account_type,
         country, origin_bank, destination_bank, status,
         property_filters_json, properties_to_negate,
-        date_trunc('month', utc_created_at) as transaction_month
+        date_trunc('month', utc_created_at) as transaction_month, updated_at as utc_updated_at
     from {{ ref('int_mms_with_rules') }}
 ),
 
@@ -27,7 +27,7 @@ ranked as (
 linear_pricing as (
     select
         mm_id, amount, client_id, sequence_customer_id, group_id, utc_created_at, matched_product_name,
-        price_structure_json, price_minimum_amount, consumes_saas, should_be_charged, transaction_month,
+        price_structure_json, price_minimum_amount, consumes_saas, should_be_charged, transaction_month, utc_updated_at,
         transaction_count, global_transaction_order,
         price_structure_json:pricePerUnit::float as linear_price_per_unit,
         price_structure_json:isPricePercentage::boolean as linear_is_percentage,
@@ -46,7 +46,7 @@ linear_pricing as (
 tiered_pricing_raw as (
     select
         r.mm_id, r.amount, r.client_id, r.sequence_customer_id, r.group_id, r.utc_created_at, r.matched_product_name,
-        r.price_structure_json, r.price_minimum_amount, r.consumes_saas, r.should_be_charged, r.transaction_month,
+        r.price_structure_json, r.price_minimum_amount, r.consumes_saas, r.should_be_charged, r.transaction_month, r.utc_updated_at,
         r.transaction_count, r.global_transaction_order,
         null::float as linear_price_per_unit,
         null::boolean as linear_is_percentage,
@@ -245,5 +245,6 @@ select
     remaining_minimum,
     flow, transaction_type, origination_system, source_account_type,
     country, origin_bank, destination_bank, status,
-    property_filters_json, properties_to_negate
+    property_filters_json, properties_to_negate,
+    utc_updated_at
 from calc_with_flags
