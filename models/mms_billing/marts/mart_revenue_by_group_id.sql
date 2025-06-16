@@ -31,5 +31,5 @@ select
 from {{ ref('int_revenue_cumulative_amount') }}
 where 1=1
 {% if is_incremental() %}
-    and utc_updated_at > (select max(updated_at) from {{ this }})
+    and utc_updated_at > (select max(utc_updated_at) from {{ this }})
 {% endif %}
