@@ -1,10 +1,10 @@
 {{ config(
     materialized='incremental',
     incremental_strategy='merge',
-    unique_key=['mm_id', 'client_id', 'group_id', 'matched_product_name', 'utc_created_at', 'product_name'],
+    unique_key=['mm_id', 'client_id', 'group_id', 'product_name', 'utc_created_at'],
     post_hook=[
-        "grant select on view {{ this }} to role DATA_DEV_L1",
-        "grant select on view {{ this }} to role SALES_OPS_DEV_L0"
+        "grant select on table {{ this }} to role DATA_DEV_L1",
+        "grant select on table {{ this }} to role SALES_OPS_DEV_L0"
     ]
 ) }}
 

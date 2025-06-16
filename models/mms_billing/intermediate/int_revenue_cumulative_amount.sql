@@ -1,3 +1,12 @@
+{{ config(
+    materialized='incremental',
+    incremental_strategy='merge',
+    unique_key=['mm_id', 'client_id', 'group_id', 'matched_product_name', 'utc_created_at'],
+    post_hook=[
+        "grant select on table {{ this }} to role DATA_DEV_L1"
+            ]
+) }}
+
 with with_date as (
     select
         mm_id, amount, client_id, sequence_customer_id, group_id, utc_created_at,
@@ -248,3 +257,6 @@ select
     property_filters_json, properties_to_negate,
     utc_updated_at
 from calc_with_flags
+{% if is_incremental() %}
+    where utc_updated_at > (select max(utc_updated_at) from {{ this }})
+{% endif %}
