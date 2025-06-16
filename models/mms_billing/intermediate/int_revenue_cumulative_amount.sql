@@ -4,7 +4,7 @@
     unique_key=['mm_id', 'client_id', 'group_id', 'matched_product_name', 'utc_created_at'],
     post_hook=[
         "grant select on table {{ this }} to role DATA_DEV_L1"
-            ]
+    ]
 ) }}
 
 with with_date as (
@@ -15,7 +15,8 @@ with with_date as (
         flow, transaction_type, origination_system, source_account_type,
         country, origin_bank, destination_bank, status,
         property_filters_json, properties_to_negate,
-        date_trunc('month', utc_created_at) as transaction_month, updated_at as utc_updated_at
+        date_trunc('month', utc_created_at) as transaction_month,
+        updated_at as utc_updated_at
     from {{ ref('int_mms_with_rules') }}
 ),
 
@@ -33,41 +34,47 @@ ranked as (
     from with_date
 ),
 
+amount_accumulated as (
+    select *,
+        sum(amount) over (
+            partition by matched_product_name, group_id, transaction_month
+            order by utc_created_at, mm_id
+            rows between unbounded preceding and current row
+        ) as cumulative_amount,
+
+        sum(amount) over (
+            partition by matched_product_name, group_id, transaction_month
+            order by utc_created_at, mm_id
+            rows between unbounded preceding and 1 preceding
+        ) as cumulative_amount_before
+    from ranked
+),
+
 linear_pricing as (
     select
-        mm_id, amount, client_id, sequence_customer_id, group_id, utc_created_at, matched_product_name,
-        price_structure_json, price_minimum_amount, consumes_saas, should_be_charged, transaction_month, utc_updated_at,
-        transaction_count, global_transaction_order,
+        *, 
         price_structure_json:pricePerUnit::float as linear_price_per_unit,
         price_structure_json:isPricePercentage::boolean as linear_is_percentage,
         null::float as tier_price,
         null::float as tier_fee,
         null::int as tier_upper_bound,
         null::boolean as tier_is_percentage,
-        upper(price_structure_json:pricingType::string) as pricing_type,
-        flow, transaction_type, origination_system, source_account_type,
-        country, origin_bank, destination_bank, status,
-        property_filters_json, properties_to_negate
-    from ranked
+        upper(price_structure_json:pricingType::string) as pricing_type
+    from amount_accumulated
     where upper(price_structure_json:pricingType::string) = 'LINEAR'
 ),
 
 tiered_pricing_raw as (
     select
-        r.mm_id, r.amount, r.client_id, r.sequence_customer_id, r.group_id, r.utc_created_at, r.matched_product_name,
-        r.price_structure_json, r.price_minimum_amount, r.consumes_saas, r.should_be_charged, r.transaction_month, r.utc_updated_at,
-        r.transaction_count, r.global_transaction_order,
+        r.*,
         null::float as linear_price_per_unit,
         null::boolean as linear_is_percentage,
         t.value:price::float as tier_price,
         t.value:fee::float as tier_fee,
         t.value:upperBound::int as tier_upper_bound,
         t.value:isPricePercentage::boolean as tier_is_percentage,
-        upper(r.price_structure_json:pricingType::string) as pricing_type,
-        r.flow, r.transaction_type, r.origination_system, r.source_account_type,
-        r.country, r.origin_bank, r.destination_bank, r.status,
-        r.property_filters_json, r.properties_to_negate
-    from ranked r
+        upper(r.price_structure_json:pricingType::string) as pricing_type
+    from amount_accumulated r
     left join lateral flatten(input => r.price_structure_json:tiers) t
     where upper(r.price_structure_json:pricingType::string) in ('VOLUME', 'GRADUATED')
 ),
@@ -84,12 +91,16 @@ tier_ranked as (
             partition by mm_id
             order by
                 case
-                    when pricing_type = 'GRADUATED' and tier_upper_bound is not null and transaction_count <= tier_upper_bound then 1
-                    when pricing_type = 'GRADUATED' and tier_upper_bound is null then 2
-                    when pricing_type = 'VOLUME' and tier_upper_bound is not null and transaction_count <= tier_upper_bound then 1
-                    when pricing_type = 'VOLUME' and tier_upper_bound is null then 3
-                    else 4
-                end asc
+                    when pricing_type = 'GRADUATED' and tier_is_percentage and tier_upper_bound is not null and cumulative_amount <= tier_upper_bound then 1
+                    when pricing_type = 'GRADUATED' and tier_is_percentage and tier_upper_bound is null then 2
+                    when pricing_type = 'GRADUATED' and not tier_is_percentage and tier_upper_bound is not null and transaction_count <= tier_upper_bound then 3
+                    when pricing_type = 'GRADUATED' and not tier_is_percentage and tier_upper_bound is null then 4
+                    when pricing_type = 'VOLUME' and tier_is_percentage and tier_upper_bound is not null and cumulative_amount <= tier_upper_bound then 5
+                    when pricing_type = 'VOLUME' and tier_is_percentage and tier_upper_bound is null then 6
+                    when pricing_type = 'VOLUME' and not tier_is_percentage and tier_upper_bound is not null and transaction_count <= tier_upper_bound then 7
+                    when pricing_type = 'VOLUME' and not tier_is_percentage and tier_upper_bound is null then 8
+                    else 9
+                end
         ) as tier_rank
     from pricing_all
 ),
@@ -230,7 +241,7 @@ calc_with_flags as (
 
 select
     mm_id, client_id, sequence_customer_id, group_id, matched_product_name,
-    utc_created_at, transaction_month, transaction_count, amount,
+    utc_created_at, transaction_month, transaction_count, amount, cumulative_amount, cumulative_amount_before,
     price_structure_json,
     to_number(price_minimum_revenue, 10, 2) as price_minimum_revenue,
     pricing_type, consumes_saas, should_be_charged,
