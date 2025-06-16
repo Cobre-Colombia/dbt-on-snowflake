@@ -1,7 +1,7 @@
 {{ config(
     materialized='incremental',
     incremental_strategy='merge',
-    unique_key=['mm_id', 'client_id', 'group_id', 'product_name', 'utc_created_at'],
+    unique_key=['money_movement_id', 'client_id', 'group_id', 'product_name', 'utc_created_at'],
     post_hook=[
         "grant select on table {{ this }} to role DATA_DEV_L1",
         "grant select on table {{ this }} to role SALES_OPS_DEV_L0"
