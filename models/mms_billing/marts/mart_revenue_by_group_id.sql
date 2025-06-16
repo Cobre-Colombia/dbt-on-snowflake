@@ -22,6 +22,8 @@ select
     , amount
     , price_minimum_revenue as minimum_revenue
     , pricing_type
+    , consumes_saas as is_saas_transaction
+    , should_be_charged as is_charged
     , revenue
     , cumulative_revenue as accumulated_revenue
     , saas_revenue as saas_revenue_amount
