@@ -63,7 +63,6 @@ status_flat as (
     from rules, lateral flatten(input => property_filters_json:status) f
 ),
 
--- Expand rules with all properties
 rules_expanded as (
     select distinct
         r.client_id,
@@ -133,14 +132,23 @@ matched_raw as (
         rx.destination_bank_filter,
         rx.status_filter,
 
-        (rx.negate_flow and upper(mm.flow) = rx.flow_filter) as negate_flow_match,
-        (rx.negate_transaction_type and upper(mm.transaction_type) = rx.transaction_type_filter) as negate_transaction_type_match,
-        (rx.negate_origination_system and upper(mm.origination_system) = rx.origination_system_filter) as negate_origination_system_match,
-        (rx.negate_source_account_type and upper(mm.source_account_type) = rx.source_account_type_filter) as negate_source_account_type_match,
-        (rx.negate_country and upper(mm.country) = rx.country_filter) as negate_country_match,
-        (rx.negate_origin_bank and upper(mm.origin_bank) = rx.origin_bank_filter) as negate_origin_bank_match,
-        (rx.negate_destination_bank and upper(mm.destination_bank) = rx.destination_bank_filter) as negate_destination_bank_match,
-        (rx.negate_status and upper(mm.status) = rx.status_filter) as negate_status_match,
+        rx.negate_flow,
+        rx.negate_transaction_type,
+        rx.negate_origination_system,
+        rx.negate_source_account_type,
+        rx.negate_country,
+        rx.negate_origin_bank,
+        rx.negate_destination_bank,
+        rx.negate_status,
+
+        (rx.negate_flow and upper(mm.flow) != rx.flow_filter) as negate_flow_match,
+        (rx.negate_transaction_type and upper(mm.transaction_type) != rx.transaction_type_filter) as negate_transaction_type_match,
+        (rx.negate_origination_system and upper(mm.origination_system) != rx.origination_system_filter) as negate_origination_system_match,
+        (rx.negate_source_account_type and upper(mm.source_account_type) != rx.source_account_type_filter) as negate_source_account_type_match,
+        (rx.negate_country and upper(mm.country) != rx.country_filter) as negate_country_match,
+        (rx.negate_origin_bank and upper(mm.origin_bank) != rx.origin_bank_filter) as negate_origin_bank_match,
+        (rx.negate_destination_bank and upper(mm.destination_bank) != rx.destination_bank_filter) as negate_destination_bank_match,
+        (rx.negate_status and upper(mm.status) != rx.status_filter) as negate_status_match,
 
         (
             (rx.negate_flow and upper(mm.flow) = rx.flow_filter) or
@@ -161,8 +169,18 @@ matched_raw as (
             iff(upper(mm.country) = rx.country_filter, 'COUNTRY', null),
             iff(upper(mm.origin_bank) = rx.origin_bank_filter, 'ORIGIN_BANK', null),
             iff(upper(mm.destination_bank) = rx.destination_bank_filter, 'DESTINATION_BANK', null),
-            iff(upper(mm.status) = rx.status_filter, 'STATUS', null)
+            iff(upper(mm.status) = rx.status_filter, 'STATUS', null),
+
+            iff(rx.negate_flow and upper(mm.flow) != rx.flow_filter, 'NOT_FLOW', null),
+            iff(rx.negate_transaction_type and upper(mm.transaction_type) != rx.transaction_type_filter, 'NOT_TRANSACTION_TYPE', null),
+            iff(rx.negate_origination_system and upper(mm.origination_system) != rx.origination_system_filter, 'NOT_ORIGINATION_SYSTEM', null),
+            iff(rx.negate_source_account_type and upper(mm.source_account_type) != rx.source_account_type_filter, 'NOT_SOURCE_ACCOUNT_TYPE', null),
+            iff(rx.negate_country and upper(mm.country) != rx.country_filter, 'NOT_COUNTRY', null),
+            iff(rx.negate_origin_bank and upper(mm.origin_bank) != rx.origin_bank_filter, 'NOT_ORIGIN_BANK', null),
+            iff(rx.negate_destination_bank and upper(mm.destination_bank) != rx.destination_bank_filter, 'NOT_DESTINATION_BANK', null),
+            iff(rx.negate_status and upper(mm.status) != rx.status_filter, 'NOT_STATUS', null)
         ), ', ') as match_reason
+
     from mm
     join rules_expanded rx
       on mm.client_id = rx.client_id
@@ -177,41 +195,41 @@ matched_raw as (
          (rx.status_filter is not null and upper(mm.status) = rx.status_filter)
      )
 ),
+
 matched_with_priority as (
     select *,
- case
-  when (flow_filter is null or upper(flow) = flow_filter) then
     case
-      when (transaction_type_filter is null or upper(transaction_type) = transaction_type_filter) then
+      when (flow_filter is null or upper(flow) = flow_filter or (negate_flow and upper(flow) != flow_filter)) then
         case
-          when (origination_system_filter is null or upper(origination_system) = origination_system_filter) then
+          when (transaction_type_filter is null or upper(transaction_type) = transaction_type_filter or (negate_transaction_type and upper(transaction_type) != transaction_type_filter)) then
             case
-              when (source_account_type_filter is null or upper(source_account_type) = source_account_type_filter) then
+              when (origination_system_filter is null or upper(origination_system) = origination_system_filter or (negate_origination_system and upper(origination_system) != origination_system_filter)) then
                 case
-                  when (country_filter is null or upper(country) = country_filter) then
+                  when (source_account_type_filter is null or upper(source_account_type) = source_account_type_filter or (negate_source_account_type and upper(source_account_type) != source_account_type_filter)) then
                     case
-                      when (origin_bank_filter is null or upper(origin_bank) = origin_bank_filter) then
+                      when (country_filter is null or upper(country) = country_filter or (negate_country and upper(country) != country_filter)) then
                         case
-                          when (destination_bank_filter is null or upper(destination_bank) = destination_bank_filter) then
+                          when (origin_bank_filter is null or upper(origin_bank) = origin_bank_filter or (negate_origin_bank and upper(origin_bank) != origin_bank_filter)) then
                             case
-                              when (status_filter is null or upper(status) = status_filter) then 8
-                              else 7
+                              when (destination_bank_filter is null or upper(destination_bank) = destination_bank_filter or (negate_destination_bank and upper(destination_bank) != destination_bank_filter)) then
+                                case
+                                  when (status_filter is null or upper(status) = status_filter or (negate_status and upper(status) != status_filter)) then 8
+                                  else 7
+                                end
+                              else 6
                             end
-                          else 6
+                          else 5
                         end
-                      else 5
+                      else 4
                     end
-                  else 4
+                  else 3
                 end
-              else 3
+              else 2
             end
-          else 2
+          else 1
         end
-      else 1
-    end
-  else 0
-end as sequential_match_score
-
+      else 0
+    end as sequential_match_score
     from matched_raw
 ),
 
@@ -219,14 +237,15 @@ ranked as (
     select *,
         rank() over (partition by mm_id order by sequential_match_score desc) as rank_by_seq
     from matched_with_priority
-)
-,
+),
+
 resultado_final as (
     select *,
         coalesce(not negate_applied, true) as should_be_charged
     from ranked
-    where rank_by_seq = 1
+    where rank_by_seq = 1 
 ),
+
 resultado_final_filtrado as (
     select *,
         case
@@ -237,14 +256,16 @@ resultado_final_filtrado as (
         end as tx_type_mismatch
     from resultado_final
 ),
+
 resultado_final_ranked as (
     select *,
         row_number() over (
-            partition by matched_product_name, tx_type_mismatch
-            order by eventtimestamp
+            partition by mm_id, matched_product_name, tx_type_mismatch
+            order by utc_created_at
         ) as rn
     from resultado_final_filtrado
 )
+
 select distinct *
 from resultado_final_ranked
 where 
