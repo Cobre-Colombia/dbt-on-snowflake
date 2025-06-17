@@ -270,9 +270,21 @@ resultado_final_ranked as (
         ) as rn
     from resultado_final_filtrado
 )
-
+, fin as (
 select distinct *
 from resultado_final_ranked
 where 
     tx_type_mismatch = 0
     or (tx_type_mismatch = 1 and rn = 1)
+)
+select *
+from fin
+qualify row_number() over (
+    partition by mm_id, matched_product_name
+    order by 
+        case 
+            when upper(transaction_type_filter) = upper(transaction_type) then 0
+            else 1
+        end,
+        rn
+) = 1
