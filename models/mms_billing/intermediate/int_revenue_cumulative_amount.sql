@@ -18,7 +18,56 @@ with with_date as (
         date_trunc('month', utc_created_at) as transaction_month,
         updated_at as utc_updated_at
     from {{ ref('int_mms_with_rules') }}
-),
+)
+, platform_fee_base as (
+    select
+        null as mm_id,
+        r.client_id,
+        r.sequence_customer_id,
+        r.group_id,
+        r.product_name as matched_product_name,
+        current_timestamp() as utc_created_at,
+        date_trunc('month', current_timestamp()) as transaction_month,
+        1 as transaction_count,
+        null as amount,
+        null as cumulative_amount,
+        null as cumulative_amount_before,
+        r.price_structure_json,
+        cast(r.price_minimum_amount as number(10, 2)) as price_minimum_revenue,
+        'FIXED' as pricing_type,
+        r.consumes_saas,
+        true as should_be_charged,
+        null as is_percentage,
+        cast(r.price_structure_json:price::number as number(10, 2)) as price_per_unit,
+        cast(r.price_structure_json:price::number as number(10, 2)) as revenue,
+        cast(r.price_structure_json:price::number as number(10, 2)) as cumulative_revenue,
+        0 as cumulative_revenue_before,
+        case when r.consumes_saas then cast(r.price_structure_json:price::number as number(10, 2)) else 0 end as saas_revenue,
+        case when not r.consumes_saas then cast(r.price_structure_json:price::number as number(10, 2)) else 0 end as not_saas_revenue,
+        case 
+            when not r.consumes_saas then 'non_consuming'
+            else 'saas'
+        end as revenue_type,
+        greatest(
+            cast(r.price_minimum_amount as number(10, 2)) 
+            - cast(r.price_structure_json:price::number as number(10, 2)), 0
+        ) as remaining_minimum,
+        null as flow,
+        null as transaction_type,
+        null as origination_system,
+        null as source_account_type,
+        null as country,
+        null as origin_bank,
+        null as destination_bank,
+        null as status,
+        r.property_filters_json,
+        r.properties_to_negate,
+        current_timestamp() as utc_updated_at
+    from {{ ref('stg_invoice_pricing') }} r
+    where upper(product_name) = 'PLATFORM FEE'
+      and r.price_structure_json:pricingType::string = 'FIXED'
+)
+,
 
 ranked as (
     select *,
@@ -268,6 +317,30 @@ select
     property_filters_json, properties_to_negate,
     utc_updated_at
 from calc_with_flags
+
+union all
+
+select
+    mm_id, client_id, sequence_customer_id, group_id, matched_product_name,
+    utc_created_at, transaction_month, transaction_count, amount, cumulative_amount, cumulative_amount_before,
+    price_structure_json,
+    price_minimum_revenue,
+    pricing_type, consumes_saas, should_be_charged,
+    is_percentage,
+    price_per_unit,
+    revenue,
+    cumulative_revenue,
+    cumulative_revenue_before,
+    saas_revenue,
+    not_saas_revenue,
+    revenue_type,
+    remaining_minimum,
+    flow, transaction_type, origination_system, source_account_type,
+    country, origin_bank, destination_bank, status,
+    property_filters_json, properties_to_negate,
+    utc_updated_at
+from platform_fee_base
+
 {% if is_incremental() %}
     where utc_updated_at > (select max(utc_updated_at) from {{ this }})
 {% endif %}

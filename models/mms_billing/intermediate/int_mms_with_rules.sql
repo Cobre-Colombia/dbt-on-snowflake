@@ -16,7 +16,78 @@ with rules as (
         parse_json(properties_to_negate) as properties_to_negate
     from {{ ref('stg_invoice_pricing') }}
     where price_structure_json is not null
-),
+)
+
+, platform_fee_always_charged as (
+    select
+        null as id,
+        r.client_id,
+        null as eventtype,
+        current_timestamp() as eventtimestamp,
+        null as flow,
+        null as transaction_type,
+        null as origination_system,
+        null as source_account_type,
+        null as destination_bank,
+        null as origin_bank,
+        null as country,
+        null as status,
+        null as total_amount,
+        current_timestamp() as updated_at,
+        current_timestamp() as utc_created_at,
+        null as mm_id,
+        null as amount,
+        r.product_name as matched_product_name,
+        r.price_structure_json,
+        r.price_minimum_amount,
+        r.consumes_saas,
+        r.property_filters_json,
+        r.properties_to_negate,
+        r.sequence_customer_id,
+        r.group_id,
+
+        -- filtros
+        null as flow_filter,
+        null as transaction_type_filter,
+        null as origination_system_filter,
+        null as source_account_type_filter,
+        null as country_filter,
+        null as origin_bank_filter,
+        null as destination_bank_filter,
+        null as status_filter,
+
+        -- negaciones
+        false as negate_flow,
+        false as negate_transaction_type,
+        false as negate_origination_system,
+        false as negate_source_account_type,
+        false as negate_country,
+        false as negate_origin_bank,
+        false as negate_destination_bank,
+        false as negate_status,
+
+        -- matches de negaciones
+        false as negate_flow_match,
+        false as negate_transaction_type_match,
+        false as negate_origination_system_match,
+        false as negate_source_account_type_match,
+        false as negate_country_match,
+        false as negate_origin_bank_match,
+        false as negate_destination_bank_match,
+        false as negate_status_match,
+
+        false as negate_applied,
+        'FIXED_PRICE_ALWAYS_CHARGED' as match_reason,
+        99 as sequential_match_score,
+        1 as rank_by_seq,
+        true as should_be_charged,
+        0 as tx_type_mismatch,
+        1 as rn
+    from {{ ref('stg_invoice_pricing') }} r
+    where upper(product_name) = 'PLATFORM FEE'
+      and try_parse_json(price_structure_json):pricingType::string = 'FIXED'
+)
+,
 
 negations as (
     select
@@ -288,3 +359,8 @@ qualify row_number() over (
         end,
         rn
 ) = 1
+
+union all
+
+select *
+from platform_fee_always_charged
