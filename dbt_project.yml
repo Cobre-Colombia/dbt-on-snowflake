@@ -15,8 +15,8 @@ clean-targets:
 
 vars:
   client_id: ["cli_3qjccqlafg", "cli_bfvtnspza2", "cli_qqor9ztpcp", "cli_in4j1s6zuq", "cli_bdgczxcwd0", "cli_th5ezoyh3w", "DOD339"]
-  billing_period_start: "2025-05-01"
-  billing_period_end: "2025-05-31"
+  billing_period_start: "2025-01-01"
+  billing_period_end: "2025-06-30"
 
 models:
   cobre_data_hub:

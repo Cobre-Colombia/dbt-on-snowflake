@@ -22,8 +22,8 @@ with invoice as (
                 or c.customer_aliases like '%,{{ cid }},%'
             {% endfor %}
         )
-        and billing_period_start :: date = '{{ var("billing_period_start") }}'
-        and billing_period_end   :: date = '{{ var("billing_period_end") }}'
+        and billing_period_start :: date >= '{{ var("billing_period_start") }}'
+        --and billing_period_end   :: date <= '{{ var("billing_period_end") }}'
 ),
 
 union_all as (
