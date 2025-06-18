@@ -20,6 +20,7 @@ select
     , transaction_month
     , transaction_count
     , amount
+    , cumulative_amount as accumulated_amount
     , price_minimum_revenue as minimum_revenue
     , pricing_type
     , consumes_saas as is_saas_transaction
@@ -29,9 +30,11 @@ select
     , saas_revenue as saas_revenue_amount
     , not_saas_revenue as non_saas_revenue_amount
     , revenue_type as revenue_type
+    , tier_application_basis 
     , utc_updated_at
 from {{ ref('int_revenue_cumulative_amount_by_month') }}
 where 1=1
 {% if is_incremental() %}
     and utc_updated_at > (select max(utc_updated_at) from {{ this }})
 {% endif %}
+

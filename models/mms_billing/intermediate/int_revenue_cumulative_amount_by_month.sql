@@ -39,6 +39,7 @@ with with_date as (
         true as should_be_charged,
         null as is_percentage,
         cast(r.price_structure_json:price::number as number(10, 2)) as price_per_unit,
+        null as tier_application_basis,
         cast(r.price_structure_json:price::number as number(10, 2)) as revenue,
         cast(r.price_structure_json:price::number as number(10, 2)) as cumulative_revenue,
         0 as cumulative_revenue_before,
@@ -177,7 +178,15 @@ adjusted as (
         r.*,
         case when r.pricing_type = 'VOLUME' then l.latest_tier_price else r.tier_price end as eff_tier_price,
         case when r.pricing_type = 'VOLUME' then l.latest_tier_fee else r.tier_fee end as eff_tier_fee,
-        case when r.pricing_type = 'VOLUME' then l.latest_tier_is_percentage else r.tier_is_percentage end as eff_tier_is_percentage
+        case when r.pricing_type = 'VOLUME' then l.latest_tier_is_percentage else r.tier_is_percentage end as eff_tier_is_percentage,
+        case
+            when r.pricing_type = 'VOLUME' and l.latest_tier_is_percentage then 'amount'
+            when r.pricing_type = 'VOLUME' and not l.latest_tier_is_percentage then 'count'
+            when r.pricing_type = 'GRADUATED' and r.tier_is_percentage then 'amount'
+            when r.pricing_type = 'GRADUATED' and not r.tier_is_percentage then 'count'
+            else null
+        end as tier_application_basis
+
     from tier_selected r
     left join latest_volume_tier l
       on r.transaction_month = l.transaction_month
@@ -305,6 +314,7 @@ select
         when pricing_type = 'GRADUATED' then tier_price
         else null
     end as price_per_unit,
+    tier_application_basis,
     revenue,
     cumulative_revenue,
     cumulative_revenue_before,
@@ -328,6 +338,7 @@ select
     pricing_type, consumes_saas, should_be_charged,
     is_percentage,
     price_per_unit,
+    tier_application_basis,
     revenue,
     cumulative_revenue,
     cumulative_revenue_before,
