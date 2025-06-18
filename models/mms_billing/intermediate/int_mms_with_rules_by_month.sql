@@ -188,10 +188,13 @@ mm as (
     select *,
         date_trunc('month', eventtimestamp) as event_month
     from (
-        select * from {{ ref('stg_payouts_mms') }}
-        union all select * from {{ ref('stg_payin_mms') }}
-        union all select * from {{ ref('stg_dac_mms') }}
-        union all select * from {{ ref('stg_balance_recharges') }}
+        select * from {{ ref('stg_payouts_mms') }} where utc_created_at < '2025-06-18'
+        union all
+        select * from {{ ref('stg_payin_mms') }} where utc_created_at < '2025-06-18'
+        union all
+        select * from {{ ref('stg_dac_mms') }} where utc_created_at < '2025-06-18'
+        union all
+        select * from {{ ref('stg_balance_recharges') }} where utc_created_at < '2025-06-18'
     ) as all_mm
 ),
 

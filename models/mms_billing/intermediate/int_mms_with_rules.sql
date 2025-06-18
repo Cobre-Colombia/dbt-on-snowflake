@@ -181,10 +181,13 @@ rules_expanded as (
 ),
 
 mm as (
-    select * from {{ ref('stg_payouts_mms') }}
-    union all select * from {{ ref('stg_payin_mms') }}
-    union all select * from {{ ref('stg_dac_mms') }}
-    union all select * from {{ ref('stg_balance_recharges') }}
+        select * from {{ ref('stg_payouts_mms') }} where utc_created_at < '2025-06-18'
+        union all
+        select * from {{ ref('stg_payin_mms') }} where utc_created_at < '2025-06-18'
+        union all
+        select * from {{ ref('stg_dac_mms') }} where utc_created_at < '2025-06-18'
+        union all
+        select * from {{ ref('stg_balance_recharges') }} where utc_created_at < '2025-06-18'
 ),
 
 matched_raw as (
