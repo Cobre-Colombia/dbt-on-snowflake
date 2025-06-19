@@ -16,7 +16,7 @@ with with_date as (
         country, origin_bank, destination_bank, status,
         property_filters_json, properties_to_negate,
         date_trunc('month', local_created_at) as transaction_month,
-        updated_at as utc_updated_at
+        updated_at as local_updated_at, hash(group_id, matched_product_name, local_created_at, amount) as hash_match
     from {{ ref('int_mms_with_rules_by_month') }}
 )
 , platform_fee_base as (
@@ -63,7 +63,7 @@ with with_date as (
         null as status,
         r.property_filters_json,
         r.properties_to_negate,
-        current_timestamp() as utc_updated_at
+        current_timestamp() as local_updated_at
     from {{ ref('stg_invoice_pricing_by_month') }} r
     where upper(product_name) = 'PLATFORM FEE'
       and r.price_structure_json:pricingType::string = 'FIXED'
@@ -74,12 +74,12 @@ ranked as (
     select *,
         row_number() over (
             partition by matched_product_name, group_id, transaction_month
-            order by local_created_at, mm_id
+            order by local_created_at, mm_id, hash_match
         ) as transaction_count,
 
         row_number() over (
             partition by group_id, transaction_month
-            order by local_created_at, mm_id
+            order by local_created_at, mm_id, hash_match
         ) as global_transaction_order
     from with_date
 ),
@@ -88,13 +88,13 @@ amount_accumulated as (
     select *,
         sum(amount) over (
             partition by matched_product_name, group_id, transaction_month
-            order by local_created_at, mm_id
+            order by local_created_at, mm_id, hash_match
             rows between unbounded preceding and current row
         ) as cumulative_amount,
 
         sum(amount) over (
             partition by matched_product_name, group_id, transaction_month
-            order by local_created_at, mm_id
+            order by local_created_at, mm_id, hash_match
             rows between unbounded preceding and 1 preceding
         ) as cumulative_amount_before
     from ranked
@@ -138,7 +138,7 @@ pricing_all as (
 tier_ranked as (
     select *,
         row_number() over (
-            partition by mm_id
+            partition by mm_id, hash_match
             order by
                 case
                     when pricing_type = 'GRADUATED' and tier_is_percentage and tier_upper_bound is not null and cumulative_amount <= tier_upper_bound then 1
@@ -213,13 +213,13 @@ ranked_revenue as (
     select *,
         sum(revenue) over (
             partition by matched_product_name, group_id, transaction_month
-            order by local_created_at, mm_id
+            order by local_created_at, mm_id, hash_match
             rows between unbounded preceding and current row
         ) as cumulative_revenue,
 
         sum(revenue) over (
             partition by matched_product_name, group_id, transaction_month
-            order by local_created_at, mm_id
+            order by local_created_at, mm_id, hash_match
             rows between unbounded preceding and 1 preceding
         ) as cumulative_revenue_before,
 
@@ -325,7 +325,7 @@ select
     flow, transaction_type, origination_system, source_account_type,
     country, origin_bank, destination_bank, status,
     property_filters_json, properties_to_negate,
-    utc_updated_at
+    local_updated_at
 from calc_with_flags
 
 union all
@@ -349,9 +349,9 @@ select
     flow, transaction_type, origination_system, source_account_type,
     country, origin_bank, destination_bank, status,
     property_filters_json, properties_to_negate,
-    utc_updated_at
+    local_updated_at
 from platform_fee_base
 
 {% if is_incremental() %}
-    where utc_updated_at > (select max(utc_updated_at) from {{ this }})
+    where local_updated_at > (select max(local_updated_at) from {{ this }})
 {% endif %}

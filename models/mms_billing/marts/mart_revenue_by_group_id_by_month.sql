@@ -31,10 +31,10 @@ select
     , not_saas_revenue as non_saas_revenue_amount
     , revenue_type as revenue_type
     , tier_application_basis 
-    , utc_updated_at
+    , local_updated_at
 from {{ ref('int_revenue_cumulative_amount_by_month') }}
 where 1=1
 {% if is_incremental() %}
-    and utc_updated_at > (select max(utc_updated_at) from {{ this }})
+    and local_updated_at > (select max(local_updated_at) from {{ this }})
 {% endif %}
 
