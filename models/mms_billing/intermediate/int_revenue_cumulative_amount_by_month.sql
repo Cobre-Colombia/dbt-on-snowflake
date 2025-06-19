@@ -20,14 +20,14 @@ with with_date as (
     from {{ ref('int_mms_with_rules_by_month') }}
 )
 , platform_fee_base as (
-    select
+    select distinct
         null as mm_id,
         r.client_id,
         r.sequence_customer_id,
         r.group_id,
-        r.product_name as matched_product_name,
-        current_timestamp() as local_created_at,
-        date_trunc('month', current_timestamp()) as transaction_month,
+        r.matched_product_name,
+        local_created_at,
+        date_trunc('month', local_created_at) as transaction_month,
         1 as transaction_count,
         null as amount,
         null as cumulative_amount,
@@ -63,9 +63,9 @@ with with_date as (
         null as status,
         r.property_filters_json,
         r.properties_to_negate,
-        current_timestamp() as local_updated_at
-    from {{ ref('stg_invoice_pricing_by_month') }} r
-    where upper(product_name) = 'PLATFORM FEE'
+        updated_at as local_updated_at
+    from {{ ref('int_mms_with_rules_by_month') }} r
+    where upper(matched_product_name) = 'PLATFORM FEE'
       and r.price_structure_json:pricingType::string = 'FIXED'
 )
 ,

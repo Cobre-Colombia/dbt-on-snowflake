@@ -25,7 +25,7 @@ with rules as (
 ),
 
 platform_fee_always_charged as (
-    select
+    select distinct
         null as id,
         r.client_id,
         null as eventtype,
