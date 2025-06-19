@@ -112,7 +112,6 @@ negations as (
     group by product_name
 ),
 
--- Flatten filters
 flow_flat as (
     select product_name, upper(f.value::string) as flow_filter
     from rules, lateral flatten(input => property_filters_json:flow) f
@@ -363,16 +362,13 @@ fin as (
     select *
     from resultado_final_ranked
     where 
-        -- Conservar todos si es PAYIN - OPEN_LINK
         upper(transaction_type) = 'PAYIN - OPEN_LINK'
         or (
-            -- En otros casos aplicar la lógica habitual
             tx_type_mismatch = 0
             or (tx_type_mismatch = 1 and rn = 1)
         )
 )
 
--- 🟦 Casos PAYIN - OPEN_LINK: conservar uno por local_created_at
 select {{ invoice_match_columns() }}
 from fin
 where upper(transaction_type) = 'PAYIN - OPEN_LINK'
@@ -388,7 +384,6 @@ qualify row_number() over (
 
 union all
 
--- 🟩 Casos normales: deduplicar uno por mm_id + matched_product_name
 select {{ invoice_match_columns() }}
 from fin
 where upper(transaction_type) != 'PAYIN - OPEN_LINK'
