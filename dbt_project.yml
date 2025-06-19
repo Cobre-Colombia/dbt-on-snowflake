@@ -14,7 +14,9 @@ clean-targets:
   - "dbt_packages"
 
 vars:
-  client_id: ["cli_3qjccqlafg", "cli_bfvtnspza2", "cli_qqor9ztpcp", "cli_in4j1s6zuq", "cli_bdgczxcwd0", "cli_th5ezoyh3w", "DOD339","TNA629", "YOY356", "FOF452", "GIL367", "MEK368", "MRC343", "PBO507", "RMR357", "YGO355", "TFR430", "ZZA552", "cli_0bkxmugbsn", "TRE721", "TAO366", "cli_w1iczcqrox"]
+  client_id: ["cli_3qjccqlafg", "cli_bfvtnspza2", "cli_qqor9ztpcp", "cli_in4j1s6zuq", "cli_bdgczxcwd0", "cli_th5ezoyh3w", 
+              "DOD339","TNA629", "YOY356", "FOF452", "GIL367", "MEK368", "MRC343", "PBO507", "RMR357", "YGO355", "TFR430", 
+              "ZZA552", "cli_0bkxmugbsn", "TRE721", "TAO366", "cli_w1iczcqrox", "TST707", "RNR687", "RNR687", "EES720", "ASD713", "ASD713"]
   billing_period_start: "2025-04-01"
   billing_period_end: "2025-06-30"
 
