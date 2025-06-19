@@ -1,8 +1,12 @@
 {{ config(
+    materialized='table',
     post_hook=[
         "grant select on view {{ this }} to role DATA_DEV_L1"
     ]
 ) }}
+
+{% set cutoff_date = modules.datetime.datetime.utcnow().date() - modules.datetime.timedelta(days=0) %}
+
 
 with rules as (
     select
@@ -26,7 +30,6 @@ platform_fee_always_charged as (
         r.client_id,
         null as eventtype,
         null as eventtimestamp,
-        null as eventtimestamp_month,
         null as flow,
         null as transaction_type,
         null as origination_system,
@@ -37,9 +40,10 @@ platform_fee_always_charged as (
         null as status,
         null as total_amount,
         null as updated_at,
-        null as utc_created_at,
+        null as local_created_at,
         null as mm_id,
         null as amount,
+        null as event_month,
         r.product_name as matched_product_name,
         r.price_structure_json,
         r.price_minimum_amount,
@@ -188,17 +192,16 @@ mm as (
     select *,
         date_trunc('month', eventtimestamp) as event_month
     from (
-        select * from {{ ref('stg_payouts_mms') }} where utc_created_at < '2025-06-18'
+        select * from {{ ref('stg_payouts_mms') }} where local_created_at < '{{ cutoff_date }}'
         union all
-        select * from {{ ref('stg_payin_mms') }} where utc_created_at < '2025-06-18'
+        select * from {{ ref('stg_payin_mms') }} where local_created_at < '{{ cutoff_date }}'
         union all
-        select * from {{ ref('stg_dac_mms') }} where utc_created_at < '2025-06-18'
+        select * from {{ ref('stg_dac_mms') }} where local_created_at < '{{ cutoff_date }}'
         union all
-        select * from {{ ref('stg_balance_recharges') }} where utc_created_at < '2025-06-18'
+        select * from {{ ref('stg_balance_recharges') }} where local_created_at < '{{ cutoff_date }}'
     ) as all_mm
 ),
 
--- 🚨 MATCH SOLO SI EVENT_MONTH = PRICE_STRUCTURE_MONTH
 matched_raw as (
     select
         mm.*,
@@ -351,7 +354,7 @@ resultado_final_ranked as (
     select *,
         row_number() over (
             partition by mm_id, matched_product_name, tx_type_mismatch
-            order by utc_created_at
+            order by local_created_at
         ) as rn
     from resultado_final_filtrado
 ),
@@ -363,8 +366,9 @@ fin as (
         tx_type_mismatch = 0
         or (tx_type_mismatch = 1 and rn = 1)
 )
+ 
+select {{ invoice_match_columns() }}
 
-select *
 from fin
 qualify row_number() over (
     partition by mm_id, matched_product_name
@@ -378,5 +382,5 @@ qualify row_number() over (
 
 union all
 
-select *
+select {{ invoice_match_columns() }}
 from platform_fee_always_charged

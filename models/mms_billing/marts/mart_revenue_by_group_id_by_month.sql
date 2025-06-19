@@ -1,7 +1,7 @@
 {{ config(
     materialized='incremental',
     incremental_strategy='merge',
-    unique_key=['money_movement_id', 'client_id', 'group_id', 'product_name', 'utc_created_at'],
+    unique_key=['money_movement_id', 'client_id', 'group_id', 'product_name', 'local_created_at'],
     post_hook=[
         "grant select on table {{ this }} to role DATA_DEV_L1",
         "grant select on table {{ this }} to role SALES_OPS_DEV_L0"
@@ -16,7 +16,7 @@ select
     , matched_product_name as product_name
     , flow as transaction_flow
     , transaction_type as transaction_type
-    , utc_created_at
+    , local_created_at
     , transaction_month
     , transaction_count
     , amount

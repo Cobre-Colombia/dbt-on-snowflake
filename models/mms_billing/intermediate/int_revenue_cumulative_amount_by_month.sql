@@ -1,7 +1,7 @@
 {{ config(
     materialized='incremental',
     incremental_strategy='merge',
-    unique_key=['mm_id', 'client_id', 'group_id', 'matched_product_name', 'utc_created_at'],
+    unique_key=['mm_id', 'client_id', 'group_id', 'matched_product_name', 'local_created_at'],
     post_hook=[
         "grant select on table {{ this }} to role DATA_DEV_L1"
     ]
@@ -9,13 +9,13 @@
 
 with with_date as (
     select
-        mm_id, amount, client_id, sequence_customer_id, group_id, utc_created_at,
+        mm_id, amount, client_id, sequence_customer_id, group_id, local_created_at,
         matched_product_name, price_structure_json, price_minimum_amount,
         consumes_saas, should_be_charged,
         flow, transaction_type, origination_system, source_account_type,
         country, origin_bank, destination_bank, status,
         property_filters_json, properties_to_negate,
-        date_trunc('month', utc_created_at) as transaction_month,
+        date_trunc('month', local_created_at) as transaction_month,
         updated_at as utc_updated_at
     from {{ ref('int_mms_with_rules_by_month') }}
 )
@@ -26,7 +26,7 @@ with with_date as (
         r.sequence_customer_id,
         r.group_id,
         r.product_name as matched_product_name,
-        current_timestamp() as utc_created_at,
+        current_timestamp() as local_created_at,
         date_trunc('month', current_timestamp()) as transaction_month,
         1 as transaction_count,
         null as amount,
@@ -74,12 +74,12 @@ ranked as (
     select *,
         row_number() over (
             partition by matched_product_name, group_id, transaction_month
-            order by utc_created_at, mm_id
+            order by local_created_at, mm_id
         ) as transaction_count,
 
         row_number() over (
             partition by group_id, transaction_month
-            order by utc_created_at, mm_id
+            order by local_created_at, mm_id
         ) as global_transaction_order
     from with_date
 ),
@@ -88,13 +88,13 @@ amount_accumulated as (
     select *,
         sum(amount) over (
             partition by matched_product_name, group_id, transaction_month
-            order by utc_created_at, mm_id
+            order by local_created_at, mm_id
             rows between unbounded preceding and current row
         ) as cumulative_amount,
 
         sum(amount) over (
             partition by matched_product_name, group_id, transaction_month
-            order by utc_created_at, mm_id
+            order by local_created_at, mm_id
             rows between unbounded preceding and 1 preceding
         ) as cumulative_amount_before
     from ranked
@@ -213,13 +213,13 @@ ranked_revenue as (
     select *,
         sum(revenue) over (
             partition by matched_product_name, group_id, transaction_month
-            order by utc_created_at, mm_id
+            order by local_created_at, mm_id
             rows between unbounded preceding and current row
         ) as cumulative_revenue,
 
         sum(revenue) over (
             partition by matched_product_name, group_id, transaction_month
-            order by utc_created_at, mm_id
+            order by local_created_at, mm_id
             rows between unbounded preceding and 1 preceding
         ) as cumulative_revenue_before,
 
@@ -299,7 +299,7 @@ calc_with_flags as (
 
 select
     mm_id, client_id, sequence_customer_id, group_id, matched_product_name,
-    utc_created_at, transaction_month, transaction_count, amount, cumulative_amount, cumulative_amount_before,
+    local_created_at, transaction_month, transaction_count, amount, cumulative_amount, cumulative_amount_before,
     price_structure_json,
     to_number(price_minimum_revenue, 10, 2) as price_minimum_revenue,
     pricing_type, consumes_saas, should_be_charged,
@@ -332,7 +332,7 @@ union all
 
 select
     mm_id, client_id, sequence_customer_id, group_id, matched_product_name,
-    utc_created_at, transaction_month, transaction_count, amount, cumulative_amount, cumulative_amount_before,
+    local_created_at, transaction_month, transaction_count, amount, cumulative_amount, cumulative_amount_before,
     price_structure_json,
     price_minimum_revenue,
     pricing_type, consumes_saas, should_be_charged,
