@@ -360,16 +360,38 @@ resultado_final_ranked as (
 ),
 
 fin as (
-    select distinct *
+    select *
     from resultado_final_ranked
     where 
-        tx_type_mismatch = 0
-        or (tx_type_mismatch = 1 and rn = 1)
+        -- Conservar todos si es PAYIN - OPEN_LINK
+        upper(transaction_type) = 'PAYIN - OPEN_LINK'
+        or (
+            -- En otros casos aplicar la lógica habitual
+            tx_type_mismatch = 0
+            or (tx_type_mismatch = 1 and rn = 1)
+        )
 )
- 
-select {{ invoice_match_columns() }}
 
+-- 🟦 Casos PAYIN - OPEN_LINK: conservar uno por local_created_at
+select {{ invoice_match_columns() }}
 from fin
+where upper(transaction_type) = 'PAYIN - OPEN_LINK'
+qualify row_number() over (
+    partition by mm_id, matched_product_name, local_created_at
+    order by 
+        case 
+            when upper(transaction_type_filter) = upper(transaction_type) then 0
+            else 1
+        end,
+        rn
+) = 1
+
+union all
+
+-- 🟩 Casos normales: deduplicar uno por mm_id + matched_product_name
+select {{ invoice_match_columns() }}
+from fin
+where upper(transaction_type) != 'PAYIN - OPEN_LINK'
 qualify row_number() over (
     partition by mm_id, matched_product_name
     order by 
@@ -379,6 +401,7 @@ qualify row_number() over (
         end,
         rn
 ) = 1
+
 
 union all
 
