@@ -1,7 +1,7 @@
 {{ config(
     materialized='incremental',
     incremental_strategy='merge',
-    unique_key=['mm_id', 'client_id', 'group_id', 'matched_product_name', 'local_created_at'],
+    unique_key=['mm_id', 'client_id', 'sequence_customer_id', 'matched_product_name', 'local_created_at'],
     post_hook=[
         "grant select on table {{ this }} to role DATA_DEV_L1"
     ]
@@ -16,7 +16,7 @@ with with_date as (
         country, origin_bank, destination_bank, status,
         property_filters_json, properties_to_negate,
         date_trunc('month', local_created_at) as transaction_month,
-        updated_at as local_updated_at, hash(group_id, matched_product_name, local_created_at, amount) as hash_match
+        updated_at as local_updated_at, hash(sequence_customer_id, matched_product_name, local_created_at, amount) as hash_match
     from {{ ref('int_mms_with_rules_by_month') }}
 )
 , platform_fee_base as (
@@ -73,12 +73,12 @@ with with_date as (
 ranked as (
     select *,
         row_number() over (
-            partition by matched_product_name, group_id, transaction_month
+            partition by matched_product_name, sequence_customer_id, transaction_month
             order by local_created_at, mm_id, hash_match
         ) as transaction_count,
 
         row_number() over (
-            partition by group_id, transaction_month
+            partition by sequence_customer_id, transaction_month
             order by local_created_at, mm_id, hash_match
         ) as global_transaction_order
     from with_date
@@ -87,13 +87,13 @@ ranked as (
 amount_accumulated as (
     select *,
         sum(amount) over (
-            partition by matched_product_name, group_id, transaction_month
+            partition by matched_product_name, sequence_customer_id, transaction_month
             order by local_created_at, mm_id, hash_match
             rows between unbounded preceding and current row
         ) as cumulative_amount,
 
         sum(amount) over (
-            partition by matched_product_name, group_id, transaction_month
+            partition by matched_product_name, sequence_customer_id, transaction_month
             order by local_created_at, mm_id, hash_match
             rows between unbounded preceding and 1 preceding
         ) as cumulative_amount_before
@@ -163,12 +163,12 @@ tier_selected as (
 latest_volume_tier as (
     select distinct
         transaction_month,
-        group_id,
+        sequence_customer_id,
         matched_product_name,
         pricing_type,
-        max_by(tier_price, transaction_count) over (partition by transaction_month, group_id, matched_product_name) as latest_tier_price,
-        max_by(tier_fee, transaction_count) over (partition by transaction_month, group_id, matched_product_name) as latest_tier_fee,
-        max_by(tier_is_percentage, transaction_count) over (partition by transaction_month, group_id, matched_product_name) as latest_tier_is_percentage
+        max_by(tier_price, transaction_count) over (partition by transaction_month, sequence_customer_id, matched_product_name) as latest_tier_price,
+        max_by(tier_fee, transaction_count) over (partition by transaction_month, sequence_customer_id, matched_product_name) as latest_tier_fee,
+        max_by(tier_is_percentage, transaction_count) over (partition by transaction_month, sequence_customer_id, matched_product_name) as latest_tier_is_percentage
     from tier_selected
     where pricing_type = 'VOLUME'
 ),
@@ -190,7 +190,7 @@ adjusted as (
     from tier_selected r
     left join latest_volume_tier l
       on r.transaction_month = l.transaction_month
-     and r.group_id = l.group_id
+     and r.sequence_customer_id = l.sequence_customer_id
      and r.matched_product_name = l.matched_product_name
 ),
 
@@ -212,37 +212,37 @@ calc as (
 ranked_revenue as (
     select *,
         sum(revenue) over (
-            partition by matched_product_name, group_id, transaction_month
+            partition by matched_product_name, sequence_customer_id, transaction_month
             order by local_created_at, mm_id, hash_match
             rows between unbounded preceding and current row
         ) as cumulative_revenue,
 
         sum(revenue) over (
-            partition by matched_product_name, group_id, transaction_month
+            partition by matched_product_name, sequence_customer_id, transaction_month
             order by local_created_at, mm_id, hash_match
             rows between unbounded preceding and 1 preceding
         ) as cumulative_revenue_before,
 
         sum(revenue) over (
-            partition by group_id, transaction_month
+            partition by sequence_customer_id, transaction_month
             order by global_transaction_order
             rows between unbounded preceding and current row
         ) as cumulative_revenue_global,
 
         sum(revenue) over (
-            partition by group_id, transaction_month
+            partition by sequence_customer_id, transaction_month
             order by global_transaction_order
             rows between unbounded preceding and 1 preceding
         ) as cumulative_revenue_global_before,
 
         sum(case when consumes_saas and should_be_charged then revenue else 0 end) over (
-            partition by group_id, transaction_month
+            partition by sequence_customer_id, transaction_month
             order by global_transaction_order
             rows between unbounded preceding and current row
         ) as cumulative_saas_revenue_global,
 
         sum(case when consumes_saas and should_be_charged then revenue else 0 end) over (
-            partition by group_id, transaction_month
+            partition by sequence_customer_id, transaction_month
             order by global_transaction_order
             rows between unbounded preceding and 1 preceding
         ) as cumulative_saas_revenue_global_before
@@ -251,11 +251,11 @@ ranked_revenue as (
 
 global_minimums as (
     select
-        group_id,
+        sequence_customer_id,
         transaction_month,
         max(price_minimum_amount) as price_minimum_revenue
     from with_date
-    group by group_id, transaction_month
+    group by sequence_customer_id, transaction_month
 ),
 
 calc_with_flags as (
@@ -293,7 +293,7 @@ calc_with_flags as (
 
     from ranked_revenue r
     left join global_minimums g
-      on r.group_id = g.group_id
+      on r.sequence_customer_id = g.sequence_customer_id
      and r.transaction_month = g.transaction_month
 )
 
