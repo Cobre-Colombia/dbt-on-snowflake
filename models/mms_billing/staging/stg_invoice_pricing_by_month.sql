@@ -15,18 +15,18 @@ with invoice as (
     left join {{ source('SALES_OPS', 'CUSTOMERS') }} so
         on c.id = so.sequence_id
     where 1 = 1
-        and (
-            c.customer_aliases in (
-                {% for cid in var('client_id') %}
-                    '{{ cid }}'{% if not loop.last %}, {% endif %}
-                {% endfor %}
-            )
-            {% for cid in var('client_id') %}
-                or c.customer_aliases like '{{ cid }},%'
-                or c.customer_aliases like '%,{{ cid }}'
-                or c.customer_aliases like '%,{{ cid }},%'
-            {% endfor %}
-        )
+        -- and (
+        --     c.customer_aliases in (
+        --         {% for cid in var('client_id') %}
+        --             '{{ cid }}'{% if not loop.last %}, {% endif %}
+        --         {% endfor %}
+        --     )
+        --     {% for cid in var('client_id') %}
+        --         or c.customer_aliases like '{{ cid }},%'
+        --         or c.customer_aliases like '%,{{ cid }}'
+        --         or c.customer_aliases like '%,{{ cid }},%'
+        --     {% endfor %}
+        -- )
         and billing_period_start :: date >= '{{ var("billing_period_start") }}'
         -- and billing_period_end   :: date <= '{{ var("billing_period_end") }}'
 )

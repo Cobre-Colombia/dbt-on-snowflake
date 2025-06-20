@@ -1,7 +1,7 @@
 {{ config(
     materialized='incremental',
     incremental_strategy='merge',
-    unique_key=['money_movement_id', 'client_id', 'group_id', 'product_name', 'local_created_at'],
+    unique_key=['money_movement_id', 'sequence_customer_id', 'product_name', 'local_created_at'],
     post_hook=[
         "grant select on table {{ this }} to role DATA_DEV_L1",
         "grant select on table {{ this }} to role SALES_OPS_DEV_L0"
@@ -29,6 +29,9 @@ select
     , cumulative_revenue as accumulated_revenue
     , remaining_minimum as remaining_minimum_amount
     , saas_revenue as saas_revenue_amount
+    , platform_fee_share
+    , remaining_minimum_saas_share
+    , revenue_total_adjusted as revenue_total_adjusted_amount
     , not_saas_revenue as non_saas_revenue_amount
     , revenue_type as revenue_type
     , tier_application_basis 
