@@ -9,7 +9,7 @@
 
 
 with rules as (
-    select
+    select distinct
         client_id,
         sequence_customer_id,
         group_id,
