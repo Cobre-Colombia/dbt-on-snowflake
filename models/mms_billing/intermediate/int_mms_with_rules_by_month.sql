@@ -97,8 +97,7 @@ platform_fee_always_charged as (
 ),
 
 negations as (
-    select
-        product_name,
+    select distinct sequence_customer_id, product_name,
         max(iff(upper(f.value::string) = 'FLOW', true, false)) as negate_flow,
         max(iff(upper(f.value::string) = 'TRANSACTION_TYPE', true, false)) as negate_transaction_type,
         max(iff(upper(f.value::string) = 'ORIGINATION_SYSTEM', true, false)) as negate_origination_system,
@@ -109,39 +108,40 @@ negations as (
         max(iff(upper(f.value::string) = 'STATUS', true, false)) as negate_status
     from rules,
          lateral flatten(input => properties_to_negate) f
-    group by product_name
+    group by sequence_customer_id, product_name
 ),
 
 flow_flat as (
-    select product_name, upper(f.value::string) as flow_filter
+    select distinct sequence_customer_id, product_name,upper(f.value::string) as flow_filter
     from rules, lateral flatten(input => property_filters_json:flow) f
 ),
 tx_flat as (
-    select product_name, upper(f.value::string) as transaction_type_filter
+    select distinct sequence_customer_id, product_name,upper(f.value::string) as transaction_type_filter
     from rules, lateral flatten(input => property_filters_json:transaction_type) f
 ),
 origin_flat as (
-    select product_name, upper(f.value::string) as origination_system_filter
+    select distinct sequence_customer_id, product_name,upper(f.value::string) as origination_system_filter
     from rules, lateral flatten(input => property_filters_json:origination_system) f
 ),
 source_flat as (
-    select product_name, upper(f.value::string) as source_account_type_filter
+    select distinct sequence_customer_id, product_name,upper(f.value::string) as source_account_type_filter
     from rules, lateral flatten(input => property_filters_json:source_account_type) f
 ),
 country_flat as (
-    select product_name, upper(f.value::string) as country_filter
+    select distinct sequence_customer_id, product_name,upper(f.value::string) as country_filter
     from rules, lateral flatten(input => property_filters_json:country) f
 ),
 origin_bank_flat as (
-    select product_name, upper(f.value::string) as origin_bank_filter
+    select distinct sequence_customer_id, product_name,upper(f.value::string) as origin_bank_filter
     from rules, lateral flatten(input => property_filters_json:origin_bank) f
 ),
 destination_bank_flat as (
-    select product_name, upper(f.value::string) as destination_bank_filter
+    select distinct sequence_customer_id, product_name, upper(f.value::string) as destination_bank_filter
     from rules, lateral flatten(input => property_filters_json:destination_bank) f
-),
+)
+,
 status_flat as (
-    select product_name, upper(f.value::string) as status_filter
+    select distinct sequence_customer_id, product_name, upper(f.value::string) as status_filter
     from rules, lateral flatten(input => property_filters_json:status) f
 ),
 
@@ -176,15 +176,15 @@ rules_expanded as (
         destination_bank_filter,
         status_filter
     from rules r
-    left join negations nf on r.product_name = nf.product_name
-    left join flow_flat on r.product_name = flow_flat.product_name
-    left join tx_flat on r.product_name = tx_flat.product_name
-    left join origin_flat on r.product_name = origin_flat.product_name
-    left join source_flat on r.product_name = source_flat.product_name
-    left join country_flat on r.product_name = country_flat.product_name
-    left join origin_bank_flat on r.product_name = origin_bank_flat.product_name
-    left join destination_bank_flat on r.product_name = destination_bank_flat.product_name
-    left join status_flat on r.product_name = status_flat.product_name
+    left join negations nf on r.product_name = nf.product_name and r.sequence_customer_id = nf.sequence_customer_id
+    left join flow_flat on r.product_name = flow_flat.product_name and r.sequence_customer_id = flow_flat.sequence_customer_id
+    left join tx_flat on r.product_name = tx_flat.product_name and r.sequence_customer_id = tx_flat.sequence_customer_id
+    left join origin_flat on r.product_name = origin_flat.product_name and r.sequence_customer_id = origin_flat.sequence_customer_id
+    left join source_flat on r.product_name = source_flat.product_name and r.sequence_customer_id = source_flat.sequence_customer_id
+    left join country_flat on r.product_name = country_flat.product_name and r.sequence_customer_id = country_flat.sequence_customer_id
+    left join origin_bank_flat on r.product_name = origin_bank_flat.product_name and r.sequence_customer_id = origin_bank_flat.sequence_customer_id
+    left join destination_bank_flat on r.product_name = destination_bank_flat.product_name and r.sequence_customer_id = destination_bank_flat.sequence_customer_id
+    left join status_flat on r.product_name = status_flat.product_name and r.sequence_customer_id = status_flat.sequence_customer_id
 ),
 
 mm as (
@@ -241,7 +241,7 @@ matched_raw as (
         (rx.negate_destination_bank and upper(mm.destination_bank) != rx.destination_bank_filter) as negate_destination_bank_match,
         (rx.negate_status and upper(mm.status) != rx.status_filter) as negate_status_match,
 
-        (
+        ( properties_to_negate is not null and array_size(properties_to_negate) > 0 and (
             (rx.negate_flow and upper(mm.flow) = rx.flow_filter) or
             (rx.negate_transaction_type and upper(mm.transaction_type) = rx.transaction_type_filter) or
             (rx.negate_origination_system and upper(mm.origination_system) = rx.origination_system_filter) or
@@ -250,7 +250,7 @@ matched_raw as (
             (rx.negate_origin_bank and upper(mm.origin_bank) = rx.origin_bank_filter) or
             (rx.negate_destination_bank and upper(mm.destination_bank) = rx.destination_bank_filter) or
             (rx.negate_status and upper(mm.status) = rx.status_filter)
-        ) as negate_applied,
+        ) ) as negate_applied,
 
         array_to_string(array_construct_compact(
             iff(upper(mm.flow) = rx.flow_filter, 'FLOW', null),

@@ -174,6 +174,8 @@ adjusted as (
             when r.pricing_type = 'VOLUME' and not l.latest_tier_is_percentage then 'count'
             when r.pricing_type = 'GRADUATED' and r.tier_is_percentage then 'amount'
             when r.pricing_type = 'GRADUATED' and not r.tier_is_percentage then 'count'
+            when r.pricing_type = 'LINEAR' and r.linear_is_percentage then 'amount'
+            when r.pricing_type = 'LINEAR' and not r.linear_is_percentage then 'count'
             else null
         end as tier_application_basis
     from tier_selected r
