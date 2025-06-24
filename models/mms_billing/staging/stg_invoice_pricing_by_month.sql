@@ -56,6 +56,7 @@ with invoice as (
         join {{ source('SEQUENCE', 'BILLING_SCHEDULE_PHASE_PRICES') }} bspp
             on p.id = bspp.price_id
             and bspp.status = 'ACTIVE'
+            and bspp.phase_archived_at is null
         left join {{ source('SEQUENCE', 'USAGE_METRICS') }} um
             on um.id = bspp.price_structure['usageMetricId']::string
     ) latest
