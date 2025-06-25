@@ -51,9 +51,9 @@ with invoice as (
                 order by bspp.modified_at desc
             ) as rn
         from {{ source('SEQUENCE', 'INVOICE_LINE_ITEMS') }} ili
-        join {{ source('SEQUENCE', 'PRICES') }} p
+        left join {{ source('SEQUENCE', 'PRICES') }} p
             on ili.price_id = p.id
-        join {{ source('SEQUENCE', 'BILLING_SCHEDULE_PHASE_PRICES') }} bspp
+        left join {{ source('SEQUENCE', 'BILLING_SCHEDULE_PHASE_PRICES') }} bspp
             on p.id = bspp.price_id
             and bspp.status = 'ACTIVE'
             and bspp.phase_archived_at is null
@@ -88,11 +88,11 @@ with invoice as (
         ili.gross_total,
         ili.calculated_at
     from COBRE_GOLD_DB.SEQUENCE.INVOICE_LINE_ITEMS ili
-    join COBRE_GOLD_DB.SEQUENCE.PRICES p
+    left join COBRE_GOLD_DB.SEQUENCE.PRICES p
         on ili.price_id = p.id
     left join latest_prices_effective lp
         on lp.invoice_line_item_id = ili.id
-    inner join invoice i
+    left join invoice i
          on ili.invoice_id = i.id
     qualify
         dense_rank() over (

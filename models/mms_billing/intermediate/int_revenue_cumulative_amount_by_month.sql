@@ -11,12 +11,12 @@ with with_date as (
     select
         mm_id, amount, client_id, sequence_customer_id, group_id, local_created_at,
         matched_product_name, price_structure_json, price_minimum_amount,
-        consumes_saas, should_be_charged,
+        consumes_saas, should_be_charged, currency,
         flow, transaction_type, origination_system, source_account_type,
         country, origin_bank, destination_bank, status,
         property_filters_json, properties_to_negate,
         date_trunc('month', local_created_at) as transaction_month,
-        updated_at as local_updated_at, hash(mm_id, sequence_customer_id, matched_product_name, local_created_at, amount) as hash_match
+        local_updated_at, hash(mm_id, sequence_customer_id, matched_product_name, local_created_at, amount) as hash_match
     from {{ ref('int_mms_with_rules_by_month') }}
     where upper(matched_product_name) not in ('DISCOUNT', 'PLATFORM FEE')
 ),
@@ -38,6 +38,7 @@ platform_fee_base as (
         'FIXED' as pricing_type,
         r.consumes_saas,
         true as should_be_charged,
+        r.currency,
         null as is_percentage,
         cast(r.price_structure_json:price::number as number(10, 2)) as price_per_unit,
         null as tier_application_basis,
@@ -64,7 +65,7 @@ platform_fee_base as (
         null as status,
         r.property_filters_json,
         r.properties_to_negate,
-        updated_at as local_updated_at
+        local_updated_at
     from {{ ref('int_mms_with_rules_by_month') }} r
     where upper(matched_product_name) = 'PLATFORM FEE'
       and r.price_structure_json:pricingType::string = 'FIXED'
@@ -87,7 +88,8 @@ discount_base as (
         cast(r.price_minimum_amount as number(10, 2)) as price_minimum_revenue,
         'DISCOUNT' as pricing_type,
         r.consumes_saas,
-        true as should_be_charged,
+        false as should_be_charged,
+        r.currency,
         null as is_percentage,
         cast(r.price_structure_json:price::number as number(10, 2)) as price_per_unit,
         null as tier_application_basis,
@@ -108,9 +110,9 @@ discount_base as (
         null as status,
         r.property_filters_json,
         r.properties_to_negate,
-        updated_at as local_updated_at
+        local_updated_at
     from {{ ref('int_mms_with_rules_by_month') }} r
-    where upper(matched_product_name) = 'DISCOUNT'
+    where upper(matched_product_name) like '%DISCOUNT%'
 ),
 ranked as (
     select *,
@@ -418,6 +420,7 @@ select
         else null
     end as price_per_unit,
     tier_application_basis,
+    currency,
     revenue,
     cumulative_revenue,
     cumulative_revenue_before,
@@ -445,6 +448,7 @@ select
     is_percentage,
     price_per_unit,
     tier_application_basis,
+    currency,
     revenue,
     cumulative_revenue,
     cumulative_revenue_before,
@@ -478,6 +482,7 @@ select
     is_percentage,
     price_per_unit,
     tier_application_basis,
+    currency,
     revenue,
     cumulative_revenue,
     cumulative_revenue_before,

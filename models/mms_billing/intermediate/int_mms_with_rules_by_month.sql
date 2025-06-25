@@ -19,7 +19,8 @@ with rules as (
         consumes_saas,
         property_filters_json,
         parse_json(properties_to_negate) as properties_to_negate,
-        price_structure_month
+        price_structure_month,
+        currency
     from {{ ref('stg_invoice_pricing_by_month') }}
     where price_structure_json is not null and upper(product_name) not in ('DISCOUNT', 'PLATFORM FEE')
 ),
@@ -39,7 +40,7 @@ platform_fee_always_charged as (
         null as country,
         null as status,
         null as total_amount,
-        month as updated_at,
+        month as local_updated_at,
         month as local_created_at,
         null as mm_id,
         null as amount,
@@ -53,7 +54,7 @@ platform_fee_always_charged as (
         r.sequence_customer_id,
         r.group_id,
         r.price_structure_month,
-
+        r.currency,
         -- filtros
         null as flow_filter,
         null as transaction_type_filter,
@@ -111,13 +112,18 @@ discount as (
         null as country,
         null as status,
         null as total_amount,
-        month as updated_at,
+        month as local_updated_at,
         month as local_created_at,
         null as mm_id,
         null as amount,
         month as event_month,
-        concat(r.title, iff(r.product_name is not null, '||', ''), r.product_name) as matched_product_name,
-        r.price_structure_json,
+        concat(r.title, iff(r.product_name is not null, concat('||', r.product_name), '')) as matched_product_name, 
+        coalesce(r.price_structure_json, 
+            parse_json('{
+                "price": ' || r.net_total || ',
+                "pricingType": "FIXED"
+            }'
+        )) as price_structure_json,
         r.price_minimum_amount,
         r.consumes_saas,
         r.property_filters_json,
@@ -125,7 +131,7 @@ discount as (
         r.sequence_customer_id,
         r.group_id,
         r.price_structure_month,
-
+        r.currency,
         -- filtros
         null as flow_filter,
         null as transaction_type_filter,
@@ -228,7 +234,7 @@ rules_expanded as (
         r.property_filters_json,
         r.properties_to_negate,
         r.price_structure_month,
-
+        r.currency,
         nf.negate_flow,
         nf.negate_transaction_type,
         nf.negate_origination_system,
@@ -262,18 +268,41 @@ mm as (
     select *,
         date_trunc('month', eventtimestamp) as event_month
     from (
-        select * from {{ ref('stg_payouts_mms') }} where local_created_at < '{{ cutoff_date }}'
+        select mm_id, CLIENT_ID, EVENTTYPE, EVENTTIMESTAMP, FLOW, TRANSACTION_TYPE, ORIGINATION_SYSTEM, SOURCE_ACCOUNT_TYPE, DESTINATION_BANK, ORIGIN_BANK, 
+                COUNTRY, STATUS, amount, UPDATED_AT, local_created_at, CLIENT_ID_EDIT as regional_client_id
+        from {{ ref('stg_payouts_mms') }} where local_created_at < '{{ cutoff_date }}'
         union all
-        select * from {{ ref('stg_payin_mms') }} where local_created_at < '{{ cutoff_date }}'
+        select mm_id, CLIENT_ID, EVENTTYPE, EVENTTIMESTAMP, FLOW, TRANSACTION_TYPE, ORIGINATION_SYSTEM, SOURCE_ACCOUNT_TYPE, DESTINATION_BANK, ORIGIN_BANK, 
+                COUNTRY, STATUS, amount, UPDATED_AT, local_created_at, CLIENT_ID_EDIT as regional_client_id
+        from {{ ref('stg_payin_mms') }} where local_created_at < '{{ cutoff_date }}'
         union all
-        select * from {{ ref('stg_dac_mms') }} where local_created_at < '{{ cutoff_date }}'
+        select mm_id, CLIENT_ID, EVENTTYPE, EVENTTIMESTAMP, FLOW, TRANSACTION_TYPE, ORIGINATION_SYSTEM, SOURCE_ACCOUNT_TYPE, DESTINATION_BANK, ORIGIN_BANK, 
+                COUNTRY, STATUS, amount, UPDATED_AT, local_created_at, CLIENT_ID_EDIT as regional_client_id
+        from {{ ref('stg_dac_mms') }} where local_created_at < '{{ cutoff_date }}'
         union all
-        select * from {{ ref('stg_balance_recharges') }} where local_created_at < '{{ cutoff_date }}'
+        select mm_id, CLIENT_ID, EVENTTYPE, EVENTTIMESTAMP, FLOW, TRANSACTION_TYPE, ORIGINATION_SYSTEM, SOURCE_ACCOUNT_TYPE, DESTINATION_BANK, ORIGIN_BANK, 
+                COUNTRY, STATUS, amount, UPDATED_AT, local_created_at, CLIENT_ID_EDIT as regional_client_id
+        from {{ ref('stg_balance_recharges') }} where local_created_at < '{{ cutoff_date }}'
     ) as all_mm
 ),
 matched_raw as (
     select
-        mm.*,
+        mm.mm_id,
+        case when rx.client_id like '%_%' then mm.regional_client_id else mm.client_id end as client_id,
+        mm.eventtype,
+        mm.eventtimestamp,
+        mm.flow,
+        mm.transaction_type,
+        mm.origination_system,
+        mm.source_account_type,
+        mm.destination_bank,
+        mm.origin_bank,
+        mm.country,
+        mm.status,
+        mm.amount,
+        mm.updated_at as local_updated_at,
+        mm.local_created_at,
+        mm.event_month,
         rx.product_name as matched_product_name,
         rx.price_structure_json,
         rx.price_minimum_amount,
@@ -283,6 +312,7 @@ matched_raw as (
         rx.sequence_customer_id,
         rx.group_id,
         rx.price_structure_month,
+        rx.currency,
 
         rx.flow_filter,
         rx.transaction_type_filter,
@@ -345,7 +375,7 @@ matched_raw as (
 
     from mm
     join rules_expanded rx
-      on mm.client_id = rx.client_id
+      on case when mm.client_id like '%_%' then mm.regional_client_id else mm.client_id end = rx.client_id
      and mm.event_month = rx.price_structure_month
      and (
          (rx.flow_filter is not null and upper(mm.flow) = rx.flow_filter) or
