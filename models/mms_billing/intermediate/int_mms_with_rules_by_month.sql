@@ -200,7 +200,6 @@ mm as (
         select * from {{ ref('stg_balance_recharges') }} where local_created_at < '{{ cutoff_date }}'
     ) as all_mm
 ),
-
 matched_raw as (
     select
         mm.*,
@@ -232,44 +231,45 @@ matched_raw as (
         rx.negate_destination_bank,
         rx.negate_status,
 
-        (rx.negate_flow and upper(mm.flow) != rx.flow_filter) as negate_flow_match,
-        (rx.negate_transaction_type and upper(mm.transaction_type) != rx.transaction_type_filter) as negate_transaction_type_match,
-        (rx.negate_origination_system and upper(mm.origination_system) != rx.origination_system_filter) as negate_origination_system_match,
-        (rx.negate_source_account_type and upper(mm.source_account_type) != rx.source_account_type_filter) as negate_source_account_type_match,
-        (rx.negate_country and upper(mm.country) != rx.country_filter) as negate_country_match,
-        (rx.negate_origin_bank and upper(mm.origin_bank) != rx.origin_bank_filter) as negate_origin_bank_match,
-        (rx.negate_destination_bank and upper(mm.destination_bank) != rx.destination_bank_filter) as negate_destination_bank_match,
-        (rx.negate_status and upper(mm.status) != rx.status_filter) as negate_status_match,
-
-        ( properties_to_negate is not null and array_size(properties_to_negate) > 0 and (
-            (rx.negate_flow and upper(mm.flow) = rx.flow_filter) or
-            (rx.negate_transaction_type and upper(mm.transaction_type) = rx.transaction_type_filter) or
-            (rx.negate_origination_system and upper(mm.origination_system) = rx.origination_system_filter) or
-            (rx.negate_source_account_type and upper(mm.source_account_type) = rx.source_account_type_filter) or
-            (rx.negate_country and upper(mm.country) = rx.country_filter) or
-            (rx.negate_origin_bank and upper(mm.origin_bank) = rx.origin_bank_filter) or
-            (rx.negate_destination_bank and upper(mm.destination_bank) = rx.destination_bank_filter) or
-            (rx.negate_status and upper(mm.status) = rx.status_filter)
+        (rx.negate_flow and upper(mm.flow) = rx.flow_filter) as negate_flow_match,
+        (rx.negate_transaction_type and upper(mm.transaction_type) = rx.transaction_type_filter) as negate_transaction_type_match,
+        (rx.negate_origination_system and upper(mm.origination_system) = rx.origination_system_filter) as negate_origination_system_match,
+        (rx.negate_source_account_type and upper(mm.source_account_type) = rx.source_account_type_filter) as negate_source_account_type_match,
+        (rx.negate_country and upper(mm.country) = rx.country_filter) as negate_country_match,
+        (rx.negate_origin_bank and upper(mm.origin_bank) = rx.origin_bank_filter) as negate_origin_bank_match,
+        (rx.negate_destination_bank and upper(mm.destination_bank) = rx.destination_bank_filter) as negate_destination_bank_match,
+        (rx.negate_status and upper(mm.status) = rx.status_filter) as negate_status_match,
+        
+        iff((rx.properties_to_negate is not null or array_size(rx.properties_to_negate) > 0), true, false) as flag_properties_to_negate,
+        ( flag_properties_to_negate and (
+            (negate_flow_match) or
+            (negate_transaction_type_match) or
+            (negate_origination_system_match) or
+            (negate_source_account_type_match) or
+            (negate_country_match) or
+            (negate_origin_bank_match) or
+            (negate_destination_bank_match) or
+            (negate_status_match)
         ) ) as negate_applied,
 
         array_to_string(array_construct_compact(
-            iff(upper(mm.flow) = rx.flow_filter, 'FLOW', null),
-            iff(upper(mm.transaction_type) = rx.transaction_type_filter, 'TRANSACTION_TYPE', null),
-            iff(upper(mm.origination_system) = rx.origination_system_filter, 'ORIGINATION_SYSTEM', null),
-            iff(upper(mm.source_account_type) = rx.source_account_type_filter, 'SOURCE_ACCOUNT_TYPE', null),
-            iff(upper(mm.country) = rx.country_filter, 'COUNTRY', null),
-            iff(upper(mm.origin_bank) = rx.origin_bank_filter, 'ORIGIN_BANK', null),
-            iff(upper(mm.destination_bank) = rx.destination_bank_filter, 'DESTINATION_BANK', null),
-            iff(upper(mm.status) = rx.status_filter, 'STATUS', null),
+            iff(not negate_flow_match and upper(mm.flow) = rx.flow_filter, 'FLOW', null),
+            iff(not negate_transaction_type_match and upper(mm.transaction_type) = rx.transaction_type_filter, 'TRANSACTION_TYPE', null),
+            iff(not negate_origination_system_match and upper(mm.origination_system) = rx.origination_system_filter, 'ORIGINATION_SYSTEM', null),
+            iff(not negate_source_account_type_match and upper(mm.source_account_type) = rx.source_account_type_filter, 'SOURCE_ACCOUNT_TYPE', null),
+            iff(not negate_country_match and upper(mm.country) = rx.country_filter, 'COUNTRY', null),
+            iff(not negate_origin_bank_match and upper(mm.origin_bank) = rx.origin_bank_filter, 'ORIGIN_BANK', null),
+            iff(not negate_destination_bank_match and upper(mm.destination_bank) = rx.destination_bank_filter, 'DESTINATION_BANK', null),
+            iff(not negate_status_match and upper(mm.status) = rx.status_filter, 'STATUS', null),
 
-            iff(rx.negate_flow and upper(mm.flow) != rx.flow_filter, 'NOT_FLOW', null),
-            iff(rx.negate_transaction_type and upper(mm.transaction_type) != rx.transaction_type_filter, 'NOT_TRANSACTION_TYPE', null),
-            iff(rx.negate_origination_system and upper(mm.origination_system) != rx.origination_system_filter, 'NOT_ORIGINATION_SYSTEM', null),
-            iff(rx.negate_source_account_type and upper(mm.source_account_type) != rx.source_account_type_filter, 'NOT_SOURCE_ACCOUNT_TYPE', null),
-            iff(rx.negate_country and upper(mm.country) != rx.country_filter, 'NOT_COUNTRY', null),
-            iff(rx.negate_origin_bank and upper(mm.origin_bank) != rx.origin_bank_filter, 'NOT_ORIGIN_BANK', null),
-            iff(rx.negate_destination_bank and upper(mm.destination_bank) != rx.destination_bank_filter, 'NOT_DESTINATION_BANK', null),
-            iff(rx.negate_status and upper(mm.status) != rx.status_filter, 'NOT_STATUS', null)
+            iff(negate_flow_match, 'NOT_FLOW', null),
+            iff(negate_transaction_type_match, 'NOT_TRANSACTION_TYPE', null),
+            iff(negate_origination_system_match, 'NOT_ORIGINATION_SYSTEM', null),
+            iff(negate_source_account_type_match, 'NOT_SOURCE_ACCOUNT_TYPE', null),
+            iff(negate_country_match, 'NOT_COUNTRY', null),
+            iff(negate_origin_bank_match, 'NOT_ORIGIN_BANK', null),
+            iff(negate_destination_bank_match, 'NOT_DESTINATION_BANK', null),
+            iff(negate_status_match, 'NOT_STATUS', null)
         ), ', ') as match_reason
 
     from mm
@@ -286,26 +286,27 @@ matched_raw as (
          (rx.destination_bank_filter is not null and upper(mm.destination_bank) = rx.destination_bank_filter) or
          (rx.status_filter is not null and upper(mm.status) = rx.status_filter)
      )
-),
+)
+,
 
 matched_with_priority as (
     select *,
     case
-      when (flow_filter is null or upper(flow) = flow_filter or (negate_flow and upper(flow) != flow_filter)) then
+      when (flow_filter is null or (upper(flow) = flow_filter and (case when flag_properties_to_negate then negate_applied else not negate_applied end))) then
         case
-          when (transaction_type_filter is null or upper(transaction_type) = transaction_type_filter or (negate_transaction_type and upper(transaction_type) != transaction_type_filter)) then
+          when (transaction_type_filter is null or (upper(transaction_type) = transaction_type_filter and (case when flag_properties_to_negate then negate_applied else not negate_applied end))) then
             case
-              when (origination_system_filter is null or upper(origination_system) = origination_system_filter or (negate_origination_system and upper(origination_system) != origination_system_filter)) then
+              when (origination_system_filter is null or (upper(origination_system) = origination_system_filter and (case when flag_properties_to_negate then negate_applied else not negate_applied end))) then
                 case
-                  when (source_account_type_filter is null or upper(source_account_type) = source_account_type_filter or (negate_source_account_type and upper(source_account_type) != source_account_type_filter)) then
+                  when (source_account_type_filter is null or (upper(source_account_type) = source_account_type_filter and (case when flag_properties_to_negate then negate_applied else not negate_applied end))) then
                     case
-                      when (country_filter is null or upper(country) = country_filter or (negate_country and upper(country) != country_filter)) then
+                      when (country_filter is null or (upper(country) = country_filter and (case when flag_properties_to_negate then negate_applied else not negate_applied end))) then
                         case
-                          when (origin_bank_filter is null or upper(origin_bank) = origin_bank_filter or (negate_origin_bank and upper(origin_bank) != origin_bank_filter)) then
+                          when (origin_bank_filter is null or (upper(origin_bank) = origin_bank_filter and (case when flag_properties_to_negate then negate_applied else not negate_applied end))) then
                             case
-                              when (destination_bank_filter is null or upper(destination_bank) = destination_bank_filter or (negate_destination_bank and upper(destination_bank) != destination_bank_filter)) then
+                              when (destination_bank_filter is null or (upper(destination_bank) = destination_bank_filter and (case when flag_properties_to_negate then negate_applied else not negate_applied end))) then
                                 case
-                                  when (status_filter is null or upper(status) = status_filter or (negate_status and upper(status) != status_filter)) then 8
+                                  when (status_filter is null or (upper(status) = status_filter and (case when flag_properties_to_negate then negate_applied else not negate_applied end))) then 8
                                   else 7
                                 end
                               else 6
