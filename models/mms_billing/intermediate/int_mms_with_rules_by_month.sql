@@ -329,6 +329,7 @@ ranked as (
     select *,
         rank() over (partition by mm_id order by sequential_match_score desc) as rank_by_seq
     from matched_with_priority
+    where sequential_match_score = 8
 ),
 
 resultado_final as (
