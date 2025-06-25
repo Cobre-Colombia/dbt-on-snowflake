@@ -21,7 +21,7 @@ with rules as (
         parse_json(properties_to_negate) as properties_to_negate,
         price_structure_month
     from {{ ref('stg_invoice_pricing_by_month') }}
-    where price_structure_json is not null
+    where price_structure_json is not null and upper(product_name) not in ('DISCOUNT', 'PLATFORM FEE')
 ),
 
 platform_fee_always_charged as (
@@ -94,6 +94,77 @@ platform_fee_always_charged as (
     from {{ ref('stg_invoice_pricing_by_month') }} r
     where upper(product_name) = 'PLATFORM FEE'
       and try_parse_json(price_structure_json):pricingType::string = 'FIXED'
+),
+
+discount as (
+    select distinct
+        null as id,
+        r.client_id,
+        null as eventtype,
+        null as eventtimestamp,
+        null as flow,
+        null as transaction_type,
+        null as origination_system,
+        null as source_account_type,
+        null as destination_bank,
+        null as origin_bank,
+        null as country,
+        null as status,
+        null as total_amount,
+        month as updated_at,
+        month as local_created_at,
+        null as mm_id,
+        null as amount,
+        month as event_month,
+        concat(r.title, iff(r.product_name is not null, '||', ''), r.product_name) as matched_product_name,
+        r.price_structure_json,
+        r.price_minimum_amount,
+        r.consumes_saas,
+        r.property_filters_json,
+        r.properties_to_negate,
+        r.sequence_customer_id,
+        r.group_id,
+        r.price_structure_month,
+
+        -- filtros
+        null as flow_filter,
+        null as transaction_type_filter,
+        null as origination_system_filter,
+        null as source_account_type_filter,
+        null as country_filter,
+        null as origin_bank_filter,
+        null as destination_bank_filter,
+        null as status_filter,
+
+        -- negaciones
+        false as negate_flow,
+        false as negate_transaction_type,
+        false as negate_origination_system,
+        false as negate_source_account_type,
+        false as negate_country,
+        false as negate_origin_bank,
+        false as negate_destination_bank,
+        false as negate_status,
+
+        -- matches de negaciones
+        false as negate_flow_match,
+        false as negate_transaction_type_match,
+        false as negate_origination_system_match,
+        false as negate_source_account_type_match,
+        false as negate_country_match,
+        false as negate_origin_bank_match,
+        false as negate_destination_bank_match,
+        false as negate_status_match,
+
+        false as negate_applied,
+        'DISCOUNT' as match_reason,
+        99 as sequential_match_score,
+        1 as rank_by_seq,
+        true as should_be_charged,
+        0 as tx_type_mismatch,
+        1 as rn
+    from {{ ref('stg_invoice_pricing_by_month') }} r
+    where upper(title) = 'DISCOUNT'
 ),
 
 negations as (
@@ -404,3 +475,8 @@ union all
 
 select {{ invoice_match_columns() }}
 from platform_fee_always_charged
+
+union all
+
+select {{ invoice_match_columns() }}
+from discount

@@ -59,9 +59,9 @@ with invoice as (
             and bspp.phase_archived_at is null
         left join {{ source('SEQUENCE', 'USAGE_METRICS') }} um
             on um.id = bspp.price_structure['usageMetricId']::string
+        where ili.deleted_at is null
     ) latest
     where rn = 1 
-    order by usage_metric asc, PRICE_STRUCTURE_MONTH asc, rn asc, modified_at asc
 )
 
 , union_all as (
@@ -92,7 +92,7 @@ with invoice as (
         on ili.price_id = p.id
     left join latest_prices_effective lp
         on lp.invoice_line_item_id = ili.id
-     inner join invoice i
+    inner join invoice i
          on ili.invoice_id = i.id
     qualify
         dense_rank() over (
