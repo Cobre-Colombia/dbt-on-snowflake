@@ -35,8 +35,8 @@ WITH invoice_pricing_by_month AS (
              , DATE_TRUNC('month', i.BILLING_PERIOD_START)           AS PRICE_STRUCTURE_MONTH
              , ROW_NUMBER()
                 OVER (
-                    PARTITION BY I.ID, I.BILLING_PERIOD_START, IS_DISCOUNT, P.PRODUCT_NAME
-                    ORDER BY ILI.MODIFIED_AT DESC
+                    PARTITION I.CUSTOMER_ID, I.BILLING_PERIOD_START, IS_DISCOUNT, P.PRODUCT_NAME
+                    ORDER BY I.CALCULATED_AT DESC, ILI.MODIFIED_AT DESC
                     )                                                  AS RN
         FROM {{ source('SEQUENCE', 'INVOICES') }} I
         LEFT JOIN {{ source('SEQUENCE', 'INVOICE_LINE_ITEMS') }} ILI
@@ -45,8 +45,6 @@ WITH invoice_pricing_by_month AS (
             ON ILI.PRICE_ID = P.ID
         LEFT JOIN {{ source('SEQUENCE', 'BILLING_SCHEDULE_PHASE_PRICES') }} BSPP
             ON P.ID = BSPP.PRICE_ID
-            AND BSPP.STATUS = 'ACTIVE'
-            AND BSPP.PHASE_ARCHIVED_AT IS NULL
         LEFT JOIN {{ source('SEQUENCE', 'USAGE_METRICS') }} UM
             ON UM.ID = BSPP.PRICE_STRUCTURE['usageMetricId']::STRING
         LEFT JOIN {{ source('SEQUENCE', 'CUSTOMERS') }} C
@@ -55,6 +53,7 @@ WITH invoice_pricing_by_month AS (
             ON C.ID = SO.SEQUENCE_ID
         WHERE 1 = 1
           AND ILI.DELETED_AT IS NULL
+          AND BSPP.STATUS IN ('ACTIVE', 'COMPLETED')
           AND BSPP.PHASE_ARCHIVED_AT IS NULL
           AND I.BILLING_PERIOD_START :: DATE >= '{{ var("billing_period_start") }}'
           -- AND I.BILLING_PERIOD_END :: DATE <= '{{ var("billing_period_end") }}'
