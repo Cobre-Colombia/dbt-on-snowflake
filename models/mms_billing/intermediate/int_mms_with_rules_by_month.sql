@@ -7,7 +7,6 @@
 
 {% set cutoff_date = modules.datetime.datetime.utcnow().date() - modules.datetime.timedelta(days=0) %}
 
-
 with rules as (
     select distinct
         client_id,
@@ -68,9 +67,9 @@ mm as (
                local_created_at, client_id_edit as regional_client_id
         from {{ ref('stg_balance_recharges') }} where local_created_at < '{{ cutoff_date }}'
     )
-),
+)
 
-matched_raw as (
+, matched_raw as (
     select
         mm.*,
         r.sequence_customer_id,
@@ -101,47 +100,77 @@ matched_raw as (
         (r.negate_origin_bank and match_origin_bank) as negate_match_origin_bank,
         (r.negate_destination_bank and match_destination_bank) as negate_match_destination_bank,
         (r.negate_status and match_status) as negate_match_status,
-
+        
+        iff(r.properties_to_negate_str is not null,true, false) properties_to_negate_flag,
+        
         (
-          (r.flow_filters is null or match_flow)
-          and (r.transaction_type_filters is null or match_transaction_type)
-          and (r.origination_system_filters is null or match_origination_system)
-          and (r.source_account_type_filters is null or match_source_account_type)
-          and (r.country_filters is null or match_country)
-          and (r.origin_bank_filters is null or match_origin_bank)
-          and (r.destination_bank_filters is null or match_destination_bank)
-          and (r.status_filters is null or match_status)
-        ) as is_match_all_filters,
-
-        (
-          (r.negate_flow and match_flow)
-          or (r.negate_transaction_type and match_transaction_type)
-          or (r.negate_origination_system and match_origination_system)
-          or (r.negate_source_account_type and match_source_account_type)
-          or (r.negate_country and match_country)
-          or (r.negate_origin_bank and match_origin_bank)
-          or (r.negate_destination_bank and match_destination_bank)
-          or (r.negate_status and match_status)
-        ) as is_negated_by_any_filter,
+          iff(r.negate_flow, true, (r.flow_filters is null or match_flow))
+          and iff(r.negate_transaction_type, true, (r.transaction_type_filters is null or match_transaction_type))
+          and iff(r.negate_origination_system, true, (r.origination_system_filters is null or match_origination_system))
+          and iff(r.negate_source_account_type, true, (r.source_account_type_filters is null or match_source_account_type))
+          and iff(r.negate_country, true, (r.country_filters is null or match_country))
+          and iff(r.negate_origin_bank, true, (r.origin_bank_filters is null or match_origin_bank))
+          and iff(r.negate_destination_bank, true, (r.destination_bank_filters is null or match_destination_bank))
+          and iff(r.negate_status, true, (r.status_filters is null or match_status))
+        ) as matches_positive_filters,
+        
+        ( properties_to_negate_flag and (
+          (
+               NEGATE_MATCH_FLOW
+            OR NEGATE_MATCH_TRANSACTION_TYPE
+            OR NEGATE_MATCH_ORIGINATION_SYSTEM
+            OR NEGATE_MATCH_SOURCE_ACCOUNT_TYPE
+            OR NEGATE_MATCH_COUNTRY
+            OR NEGATE_MATCH_ORIGIN_BANK
+            OR NEGATE_MATCH_DESTINATION_BANK
+            OR NEGATE_MATCH_STATUS
+          )
+        )) as matches_negate_filters,
 
         array_to_string(array_construct_compact(
-            iff(match_flow, iff(r.negate_flow, 'NOT_FLOW', 'FLOW'), null),
-            iff(match_transaction_type, iff(r.negate_transaction_type, 'NOT_TRANSACTION_TYPE', 'TRANSACTION_TYPE'), null),
-            iff(match_origination_system, iff(r.negate_origination_system, 'NOT_ORIGINATION_SYSTEM', 'ORIGINATION_SYSTEM'), null),
-            iff(match_source_account_type, iff(r.negate_source_account_type, 'NOT_SOURCE_ACCOUNT_TYPE', 'SOURCE_ACCOUNT_TYPE'), null),
-            iff(match_country, iff(r.negate_country, 'NOT_COUNTRY', 'COUNTRY'), null),
-            iff(match_origin_bank, iff(r.negate_origin_bank, 'NOT_ORIGIN_BANK', 'ORIGIN_BANK'), null),
-            iff(match_destination_bank, iff(r.negate_destination_bank, 'NOT_DESTINATION_BANK', 'DESTINATION_BANK'), null),
-            iff(match_status, iff(r.negate_status, 'NOT_STATUS', 'STATUS'), null)
+            iff(match_flow and not r.negate_flow, 'FLOW', null),
+            iff(not match_flow and r.negate_flow, 'NOT_FLOW', null),
+        
+            iff(match_transaction_type and not r.negate_transaction_type, 'TRANSACTION_TYPE', null),
+            iff(not match_transaction_type and r.negate_transaction_type, 'NOT_TRANSACTION_TYPE', null),
+        
+            iff(match_origination_system and not r.negate_origination_system, 'ORIGINATION_SYSTEM', null),
+            iff(not match_origination_system and r.negate_origination_system, 'NOT_ORIGINATION_SYSTEM', null),
+        
+            iff(match_source_account_type and not r.negate_source_account_type, 'SOURCE_ACCOUNT_TYPE', null),
+            iff(not match_source_account_type and r.negate_source_account_type, 'NOT_SOURCE_ACCOUNT_TYPE', null),
+        
+            iff(match_country and not r.negate_country, 'COUNTRY', null),
+            iff(not match_country and r.negate_country, 'NOT_COUNTRY', null),
+        
+            iff(match_origin_bank and not r.negate_origin_bank, 'ORIGIN_BANK', null),
+            iff(not match_origin_bank and r.negate_origin_bank, 'NOT_ORIGIN_BANK', null),
+        
+            iff(match_destination_bank and not r.negate_destination_bank, 'DESTINATION_BANK', null),
+            iff(not match_destination_bank and r.negate_destination_bank, 'NOT_DESTINATION_BANK', null),
+        
+            iff(match_status and not r.negate_status, 'STATUS', null),
+            iff(not match_status and r.negate_status, 'NOT_STATUS', null)
         ), ', ') as match_reason,
 
-        coalesce(not is_negated_by_any_filter, true) as should_be_charged
-
+        (matches_positive_filters = FALSE AND matches_negate_filters) OR (matches_positive_filters) as sould_continue,
+        
+        CASE
+           WHEN properties_to_negate_flag = false 
+                AND matches_positive_filters
+           THEN TRUE 
+           WHEN properties_to_negate_flag = true
+                AND NOT matches_negate_filters
+                AND matches_positive_filters
+           THEN TRUE
+        ELSE FALSE END as should_be_charged
+        
     from mm
     join rules r
       on coalesce(mm.regional_client_id, mm.client_id) = r.client_id
      and mm.event_month = r.price_structure_month
 )
+
 , platform_fee_always_charged as (
     select
         null as mm_id,
@@ -169,13 +198,11 @@ matched_raw as (
         date_trunc('month', local_created_at) as transaction_month,
         month as local_updated_at,
         hash(null, sequence_customer_id, matched_product_name, local_created_at, null) as hash_match
-    from {{ ref('stg_invoice_pricing_by_month') }} r
+    from stg_invoice_pricing_by_month r
     where upper(product_name) = 'PLATFORM FEE'
       and try_parse_json(price_structure_json):pricingType::string = 'FIXED'
 )
-,
-
-discount as (
+, discount as (
     select
         null as mm_id,
         null as amount,
@@ -205,7 +232,7 @@ discount as (
         date_trunc('month', local_created_at) as transaction_month,
         month as local_updated_at,
         hash(null, sequence_customer_id, matched_product_name, local_created_at, null) as hash_match
-    from {{ ref('stg_invoice_pricing_by_month') }} r
+    from stg_invoice_pricing_by_month r
     where upper(title) = 'DISCOUNT'
 )
 
@@ -220,7 +247,7 @@ select
     updated_at as local_updated_at,
     hash(mm_id, sequence_customer_id, matched_product_name, local_created_at, amount) as hash_match
 from matched_raw
-where is_match_all_filters
+where sould_continue
 
 union all
 
