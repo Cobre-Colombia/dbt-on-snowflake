@@ -3,119 +3,83 @@
         "grant select on view {{ this }} to role DATA_DEV_L1"
     ]
 ) }}
-with invoice as (
-    select
-        c.customer_aliases,
-        i.id,
-        c.id as sequence_customer_id,
-        so.group_id
-    from {{ source('SEQUENCE', 'INVOICES') }} i
-    left join {{ source('SEQUENCE', 'CUSTOMERS') }} c
-        on i.customer_id = c.id
-    left join {{ source('SALES_OPS', 'CUSTOMERS') }} so
-        on c.id = so.sequence_id
-    where 1 = 1
-        -- and (
-        --     c.customer_aliases in (
-        --         {% for cid in var('client_id') %}
-        --             '{{ cid }}'{% if not loop.last %}, {% endif %}
-        --         {% endfor %}
-        --     )
-        --     {% for cid in var('client_id') %}
-        --         or c.customer_aliases like '{{ cid }},%'
-        --         or c.customer_aliases like '%,{{ cid }}'
-        --         or c.customer_aliases like '%,{{ cid }},%'
-        --     {% endfor %}
-        -- )
-        and billing_period_start :: date >= '{{ var("billing_period_start") }}'
-        -- and billing_period_end   :: date <= '{{ var("billing_period_end") }}'
-)
-, latest_prices_effective as (
-    select *
-    from (
-        select distinct
-            bspp.CUSTOMER_ID,
-            ili.id as invoice_line_item_id,
-            p.id as price_id,
-            bspp.status,
-            bspp.price_minimum_amount,
-            iff(bspp.price_minimum_amount is not null, true, false) as consumes_saas,
-            bspp.price_structure,
-            um.name as usage_metric,
-            um.property_filters,
-            um.properties_to_negate,
-            date_trunc('month', ili.billing_period_start) as price_structure_month,
-            bspp.modified_at,
-            row_number() over (
-                partition by ili.id
-                order by bspp.modified_at desc
-            ) as rn
-        from {{ source('SEQUENCE', 'INVOICE_LINE_ITEMS') }} ili
-        left join {{ source('SEQUENCE', 'PRICES') }} p
-            on ili.price_id = p.id
-        left join {{ source('SEQUENCE', 'BILLING_SCHEDULE_PHASE_PRICES') }} bspp
-            on p.id = bspp.price_id
-            and bspp.status = 'ACTIVE'
-            and bspp.phase_archived_at is null
-        left join {{ source('SEQUENCE', 'USAGE_METRICS') }} um
-            on um.id = bspp.price_structure['usageMetricId']::string
-        where ili.deleted_at is null
-    ) latest
-    where rn = 1 
-)
 
-, union_all as (
-    select distinct
-        i.customer_aliases as raw_client_id,
-        ili.id as invoice_line_item_id,
-        i.sequence_customer_id,
-        i.group_id,
-        ili.billing_period_start :: date as month,
-        ili.invoice_id,
-        ili.title,
-        p.product_name,
-        lp.usage_metric,
-        lp.price_minimum_amount,
-        lp.consumes_saas,
-        ili.quantity,
-        ili.rate,
-        lp.property_filters,
-        lp.properties_to_negate,
-        lp.price_structure,
-        lp.price_structure_month,
-        ili.currency,
-        ili.net_total,
-        ili.gross_total,
-        ili.calculated_at
-    from COBRE_GOLD_DB.SEQUENCE.INVOICE_LINE_ITEMS ili
-    left join COBRE_GOLD_DB.SEQUENCE.PRICES p
-        on ili.price_id = p.id
-    left join latest_prices_effective lp
-        on lp.invoice_line_item_id = ili.id
-    left join invoice i
-         on ili.invoice_id = i.id
-    qualify
-        dense_rank() over (
-            partition by ili.invoice_id
-            order by ili.calculated_at desc
-        ) = 1
-    order by product_name asc, month asc, CALCULATED_AT asc
-),
 
-ranked as (
-    select
-        ua.*,
-        dense_rank() over (
-            order by ua.calculated_at desc
-        ) as date_numing
-    from union_all ua
-),
-
+WITH invoice_pricing_by_month AS (
+    SELECT *
+    FROM (
+        SELECT I.CUSTOMER_ID                                           AS SEQUENCE_CUSTOMER_ID
+             , C.CUSTOMER_ALIASES                                      AS RAW_CLIENT_ID
+             , C.LEGAL_NAME                                            AS SEQUENCE_CLIENT_NAME
+             , ILI.ID                                                  AS INVOICE_LINE_ITEM_ID
+             , P.ID                                                    AS PRICE_ID
+             , SO.GROUP_ID                                              AS GROUP_ID
+             , BSPP.STATUS
+             , BSPP.PRICE_MINIMUM_AMOUNT
+             , IFF(BSPP.PRICE_MINIMUM_AMOUNT IS NOT NULL, TRUE, FALSE) AS CONSUMES_SAAS
+             , BSPP.PRICE_STRUCTURE
+             , UM.NAME                                                 AS USAGE_METRIC
+             , UM.PROPERTY_FILTERS
+             , UM.PROPERTIES_TO_NEGATE
+             , DATE_TRUNC(MONTH, I.BILLING_PERIOD_START)               AS BILLING_MONTH
+             , ILI.MODIFIED_AT                                         AS MODIFIED_AT
+             , IFF(ILI.TITLE = 'Discount', TRUE, FALSE)                AS IS_DISCOUNT
+             , IFF(IS_DISCOUNT, ILI.NET_TOTAL, 0)                      AS DISCOUNT_AMOUNT
+             , COALESCE(P.PRODUCT_NAME, ILI.TITLE)                     AS PRODUCT_NAME
+             , ILI.TITLE
+             , ILI.CURRENCY
+             , ILI.NET_TOTAL
+             , ILI.GROSS_TOTAL
+             , ILI.CALCULATED_AT
+             , ILI.BILLING_PERIOD_START:: DATE as month
+             , DATE_TRUNC('month', i.BILLING_PERIOD_START)           AS PRICE_STRUCTURE_MONTH
+             , ROW_NUMBER()
+                OVER (
+                    PARTITION BY I.ID, I.BILLING_PERIOD_START, IS_DISCOUNT, P.PRODUCT_NAME
+                    ORDER BY ILI.MODIFIED_AT DESC
+                    )                                                  AS RN
+        FROM {{ source('SEQUENCE', 'INVOICES') }} I
+        LEFT JOIN {{ source('SEQUENCE', 'INVOICE_LINE_ITEMS') }} ILI
+            ON I.ID = ILI.INVOICE_ID
+        LEFT JOIN {{ source('SEQUENCE', 'PRICES') }} P
+            ON ILI.PRICE_ID = P.ID
+        LEFT JOIN {{ source('SEQUENCE', 'BILLING_SCHEDULE_PHASE_PRICES') }} BSPP
+            ON P.ID = BSPP.PRICE_ID
+            AND BSPP.STATUS = 'ACTIVE'
+            AND BSPP.PHASE_ARCHIVED_AT IS NULL
+        LEFT JOIN {{ source('SEQUENCE', 'USAGE_METRICS') }} UM
+            ON UM.ID = BSPP.PRICE_STRUCTURE['usageMetricId']::STRING
+        LEFT JOIN {{ source('SEQUENCE', 'CUSTOMERS') }} C
+            ON I.CUSTOMER_ID = C.ID
+        LEFT JOIN {{ source('SALES_OPS', 'CUSTOMERS') }} SO
+            ON C.ID = SO.SEQUENCE_ID
+        WHERE 1 = 1
+          AND ILI.DELETED_AT IS NULL
+          AND BSPP.PHASE_ARCHIVED_AT IS NULL
+          AND I.BILLING_PERIOD_START :: DATE >= '{{ var("billing_period_start") }}'
+          -- AND I.BILLING_PERIOD_END :: DATE <= '{{ var("billing_period_end") }}'
+        ) LATEST
+    WHERE 1 = 1
+      AND RN = 1
+    -- and (
+    --     c.customer_aliases in (
+    --         {% for cid in var('client_id') %}
+    --             '{{ cid }}'{% if not loop.last %}, {% endif %}
+    --         {% endfor %}
+    --     )
+    --     {% for cid in var('client_id') %}
+    --         or c.customer_aliases like '{{ cid }},%'
+    --         or c.customer_aliases like '%,{{ cid }}'
+    --         or c.customer_aliases like '%,{{ cid }},%'
+    --     {% endfor %}
+    -- )
+    )
+,
 exploded as (
     select
         value::string as client_id,
         r.*
-    from ranked r,
+    from invoice_pricing_by_month r,
     lateral flatten(input => split(r.raw_client_id, ','))
 )
 
