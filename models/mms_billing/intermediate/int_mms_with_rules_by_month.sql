@@ -152,8 +152,6 @@ mm as (
             iff(match_status and not r.negate_status, 'STATUS', null),
             iff(not match_status and r.negate_status, 'NOT_STATUS', null)
         ), ', ') as match_reason,
-
-        (matches_positive_filters = FALSE AND matches_negate_filters) OR (matches_positive_filters) as sould_continue,
         
         CASE
            WHEN properties_to_negate_flag = false 
@@ -247,7 +245,7 @@ select
     updated_at as local_updated_at,
     hash(mm_id, sequence_customer_id, matched_product_name, local_created_at, amount) as hash_match
 from matched_raw
-where sould_continue
+where should_be_charged
 
 union all
 
