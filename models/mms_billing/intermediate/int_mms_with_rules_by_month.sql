@@ -196,7 +196,7 @@ mm as (
         date_trunc('month', local_created_at) as transaction_month,
         month as local_updated_at,
         hash(null, sequence_customer_id, matched_product_name, local_created_at, null) as hash_match
-    from stg_invoice_pricing_by_month r
+    from {{ ref('stg_invoice_pricing_by_month') }} r
     where upper(product_name) = 'PLATFORM FEE'
       and try_parse_json(price_structure_json):pricingType::string = 'FIXED'
 )
@@ -230,7 +230,7 @@ mm as (
         date_trunc('month', local_created_at) as transaction_month,
         month as local_updated_at,
         hash(null, sequence_customer_id, matched_product_name, local_created_at, null) as hash_match
-    from stg_invoice_pricing_by_month r
+    from {{ ref('stg_invoice_pricing_by_month') }} r
     where upper(title) = 'DISCOUNT'
 )
 
