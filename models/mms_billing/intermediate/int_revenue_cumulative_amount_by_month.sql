@@ -98,7 +98,7 @@ discount_base as (
         0 as cumulative_revenue_before,
         case when r.consumes_saas then cast(r.price_structure_json:price::number as number(10, 2)) else 0 end as saas_revenue,
         case when not r.consumes_saas then cast(r.price_structure_json:price::number as number(10, 2)) else 0 end as not_saas_revenue,
-        'discount' as revenue_type,
+        'DISCOUNT' as revenue_type,
         0 as remaining_minimum,
         null as flow,
         null as transaction_type,
