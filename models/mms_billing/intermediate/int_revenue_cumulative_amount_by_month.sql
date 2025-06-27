@@ -115,6 +115,50 @@ discount_base as (
     where upper(matched_product_name) like '%DISCOUNT%'
 )
 ,
+true_up_charge_base as (
+    select distinct
+        null as mm_id,
+        null as client_id,
+        r.sequence_customer_id,
+        r.group_id,
+        r.matched_product_name,
+        local_created_at,
+        date_trunc('month', local_created_at) as transaction_month,
+        1 as transaction_count,
+        null as amount,
+        null as cumulative_amount,
+        null as cumulative_amount_before,
+        r.price_structure_json,
+        cast(r.price_minimum_amount as number(10, 2)) as price_minimum_revenue,
+        'TRUE_UP_CHARGE' as pricing_type,
+        r.consumes_saas,
+        false as should_be_charged,
+        r.currency,
+        null as is_percentage,
+        cast(r.price_structure_json:price::number as number(10, 2)) as price_per_unit,
+        null as tier_application_basis,
+        cast(r.price_structure_json:price::number as number(10, 2)) as revenue,
+        cast(r.price_structure_json:price::number as number(10, 2)) as cumulative_revenue,
+        0 as cumulative_revenue_before,
+        case when r.consumes_saas then cast(r.price_structure_json:price::number as number(10, 2)) else 0 end as saas_revenue,
+        case when not r.consumes_saas then cast(r.price_structure_json:price::number as number(10, 2)) else 0 end as not_saas_revenue,
+        'TRUE_UP_CHARGE' as revenue_type,
+        0 as remaining_minimum,
+        null as flow,
+        null as transaction_type,
+        null as origination_system,
+        null as source_account_type,
+        null as country,
+        null as origin_bank,
+        null as destination_bank,
+        null as status,
+        r.property_filters_json,
+        r.properties_to_negate,
+        local_updated_at
+    from {{ ref('int_mms_with_rules_by_month') }} r
+    where upper(matched_product_name) like '%TRUE UP CHARGE%'
+)
+,
 ranked as (
     select *,
         row_number() over (
@@ -557,6 +601,37 @@ from discount_base db
 left join trx_counts t
     on db.sequence_customer_id = t.sequence_customer_id
     and db.transaction_month = t.transaction_month
+
+union all
+
+select 
+    mm_id, client_id, sequence_customer_id, group_id, matched_product_name,
+    local_created_at, transaction_month, transaction_count, amount, cumulative_amount, cumulative_amount_before,
+    price_structure_json,
+    price_minimum_revenue,
+    pricing_type, consumes_saas, should_be_charged,
+    is_percentage,
+    price_per_unit,
+    tier_application_basis,
+    currency,
+    revenue,
+    cumulative_revenue,
+    cumulative_revenue_before,
+    saas_revenue,
+    not_saas_revenue,
+    revenue_type,
+    remaining_minimum,
+    --revenue as discount,
+    --'discount_row' as discount_type,
+    flow, transaction_type, origination_system, source_account_type,
+    country, origin_bank, destination_bank, status,
+    property_filters_json, properties_to_negate,
+    local_updated_at,
+    null as platform_fee_share,
+    null as remaining_minimum_saas_share,
+    --null as discount_share,
+    null as revenue_total_adjusted
+from true_up_charge_base tuc
 
 
 {% if is_incremental() %}
