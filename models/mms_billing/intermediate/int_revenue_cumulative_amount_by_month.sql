@@ -113,7 +113,8 @@ discount_base as (
         local_updated_at
     from {{ ref('int_mms_with_rules_by_month') }} r
     where upper(matched_product_name) like '%DISCOUNT%'
-),
+)
+,
 ranked as (
     select *,
         row_number() over (
@@ -319,7 +320,26 @@ calc_with_flags as (
       on r.sequence_customer_id = g.sequence_customer_id
      and r.transaction_month = g.transaction_month
 )
-
+,
+discount_totals as (
+    select
+        sequence_customer_id,
+        transaction_month,
+        split_part(matched_product_name, '||', 2) as discount_applies_to,
+        sum(revenue) as total_discount
+    from discount_base
+    group by sequence_customer_id, transaction_month, matched_product_name
+)
+, general_discount_totals as (
+    select *
+    from discount_totals
+    where UPPER(discount_applies_to) like 'DISCOUNT'
+)
+, specific_discount_totals as (
+    select *
+    from discount_totals
+    where UPPER(discount_applies_to) not like 'DISCOUNT'
+)
 ,
 platform_fee_totals as (
     select
@@ -335,7 +355,7 @@ trx_counts as (
         transaction_month,
         count(distinct hash_match) as trx_receiving_platform_fee
     from calc_with_flags
-    where upper(matched_product_name) != 'PLATFORM FEE'
+    where upper(matched_product_name) NOT IN ('PLATFORM FEE', 'DISCOUNT')
     group by sequence_customer_id, transaction_month
 ),
 saas_trx_counts as (
@@ -345,13 +365,15 @@ saas_trx_counts as (
         count(distinct hash_match) as saas_trx_receiving_remaining_min
     from calc_with_flags
     where consumes_saas and should_be_charged
-      and upper(matched_product_name) != 'PLATFORM FEE'
+      and upper(matched_product_name) NOT IN ('PLATFORM FEE', 'DISCOUNT')
     group by sequence_customer_id, transaction_month
-),
+)
+,
 with_allocations as (
     select
         r.*,
         p.total_platform_fee,
+        gd.total_discount,
         t.trx_receiving_platform_fee,
         s.saas_trx_receiving_remaining_min
     from calc_with_flags r
@@ -364,43 +386,72 @@ with_allocations as (
     left join saas_trx_counts s
       on r.sequence_customer_id = s.sequence_customer_id
      and r.transaction_month = s.transaction_month
-),
-final_with_distributions as (
-    select *,
+    left join general_discount_totals gd
+      on r.sequence_customer_id = gd.sequence_customer_id
+     and r.transaction_month = gd.transaction_month
+)
+
+-- select *
+-- from with_allocations
+-- where total_discount is not null;
+
+,
+ final_with_distributions as (
+    select r.*,
         MIN(
             CASE 
-                WHEN saas_trx_receiving_remaining_min > 0 THEN REMAINING_MINIMUM
-                ELSE PRICE_MINIMUM_REVENUE
+                WHEN r.saas_trx_receiving_remaining_min > 0 THEN r.remaining_minimum
+                ELSE r.price_minimum_revenue
             END
-        ) OVER (PARTITION BY sequence_customer_id, transaction_month) AS REMAINING_MINIMUM_AMOUNT,
-        case 
-            when upper(matched_product_name) != 'PLATFORM FEE' and trx_receiving_platform_fee > 0 
-            then total_platform_fee / trx_receiving_platform_fee 
+        ) OVER (PARTITION BY r.sequence_customer_id, r.transaction_month) AS REMAINING_MINIMUM_AMOUNT,
+        coalesce(case 
+            when upper(r.matched_product_name) NOT IN ('PLATFORM FEE', 'DISCOUNT') and r.trx_receiving_platform_fee > 0 
+            then r.total_platform_fee / r.trx_receiving_platform_fee 
             else 0 
-        end as platform_fee_share,
-        case 
-            when upper(matched_product_name) != 'PLATFORM FEE' 
-                 and consumes_saas and should_be_charged 
-                 and saas_trx_receiving_remaining_min > 0 
-            then REMAINING_MINIMUM_AMOUNT / saas_trx_receiving_remaining_min 
+        end, 0) as platform_fee_share,
+        coalesce(case 
+            when upper(r.matched_product_name) NOT IN ('PLATFORM FEE', 'DISCOUNT') 
+                 and r.consumes_saas and r.should_be_charged 
+                 and r.saas_trx_receiving_remaining_min > 0 
+            then REMAINING_MINIMUM_AMOUNT / r.saas_trx_receiving_remaining_min 
             else 0 
-        end as remaining_minimum_saas_share,
-        revenue 
+        end, 0) as remaining_minimum_saas_share,
+        
+        coalesce(case 
+            when upper(r.matched_product_name) NOT IN ('PLATFORM FEE', 'DISCOUNT') 
+                 and r.consumes_saas and r.should_be_charged 
+                 and r.saas_trx_receiving_remaining_min > 0 
+            then total_discount / r.saas_trx_receiving_remaining_min 
+            else 0 
+        end, 0) as discount_share,
+        r.revenue 
             + case 
-                when upper(matched_product_name) != 'PLATFORM FEE' and trx_receiving_platform_fee > 0 
-                then total_platform_fee / trx_receiving_platform_fee 
-                else 0 
-              end
+                when upper(r.matched_product_name) NOT IN ('PLATFORM FEE', 'DISCOUNT') and r.trx_receiving_platform_fee > 0 
+                then platform_fee_share
+                else 0
+            end
             + case 
-                when upper(matched_product_name) != 'PLATFORM FEE' 
-                     and consumes_saas and should_be_charged 
-                     and saas_trx_receiving_remaining_min > 0 
-                then REMAINING_MINIMUM_AMOUNT / saas_trx_receiving_remaining_min 
-                else 0 
-              end
+                when upper(r.matched_product_name) NOT IN ('PLATFORM FEE', 'DISCOUNT') 
+                 and r.consumes_saas and r.should_be_charged 
+                 and r.saas_trx_receiving_remaining_min > 0 
+                then remaining_minimum_saas_share
+                else 0
+            end
+            + case 
+                when upper(r.matched_product_name) NOT IN ('PLATFORM FEE', 'DISCOUNT') 
+                 and r.consumes_saas and r.should_be_charged 
+                 and r.saas_trx_receiving_remaining_min > 0 
+                then discount_share
+                else 0
+            end
         as revenue_total_adjusted
-    from with_allocations
+    from with_allocations r
 )
+
+-- select *
+-- from final_with_distributions
+-- where total_discount is not null;
+
 
 select
     mm_id, client_id, sequence_customer_id, group_id, matched_product_name,
@@ -434,76 +485,89 @@ select
     local_updated_at,
     platform_fee_share,
     remaining_minimum_saas_share,
+    discount_share,
     revenue_total_adjusted
 from final_with_distributions
+-- where total_discount is not null;
 
-union all
 
-select
-    mm_id, client_id, pfb.sequence_customer_id, group_id, matched_product_name,
-    local_created_at, pfb.transaction_month, transaction_count, amount, cumulative_amount, cumulative_amount_before,
-    price_structure_json,
-    price_minimum_revenue,
-    pricing_type, consumes_saas, should_be_charged,
-    is_percentage,
-    price_per_unit,
-    tier_application_basis,
-    currency,
-    revenue,
-    cumulative_revenue,
-    cumulative_revenue_before,
-    saas_revenue,
-    not_saas_revenue,
-    revenue_type,
-    remaining_minimum,
-    flow, transaction_type, origination_system, source_account_type,
-    country, origin_bank, destination_bank, status,
-    property_filters_json, properties_to_negate,
-    local_updated_at,
-    null as platform_fee_share,
-    null as remaining_minimum_saas_share,
-    case 
-        when trx_receiving_platform_fee > 0 then 0
-        else revenue 
-    end as revenue_total_adjusted
-from platform_fee_base pfb
-left join trx_counts t
-    on pfb.sequence_customer_id = t.sequence_customer_id
-    and pfb.transaction_month = t.transaction_month
+-- union all
 
-union all
+-- select
+--     mm_id, client_id, pfb.sequence_customer_id, group_id, matched_product_name,
+--     local_created_at, pfb.transaction_month, transaction_count, amount, cumulative_amount, cumulative_amount_before,
+--     price_structure_json,
+--     price_minimum_revenue,
+--     pricing_type, consumes_saas, should_be_charged,
+--     is_percentage,
+--     price_per_unit,
+--     tier_application_basis,
+--     currency,
+--     revenue + ed.total_discount as revenue,
+--     cumulative_revenue,
+--     cumulative_revenue_before,
+--     saas_revenue,
+--     not_saas_revenue,
+--     revenue_type,
+--     remaining_minimum,
+--     flow, transaction_type, origination_system, source_account_type,
+--     country, origin_bank, destination_bank, status,
+--     property_filters_json, properties_to_negate,
+--     local_updated_at,
+--     null as platform_fee_share,
+--     null as remaining_minimum_saas_share,
+--     null as discount_share,
+--     case 
+--         when trx_receiving_platform_fee > 0 then 0
+--         else revenue 
+--     end as revenue_total_adjusted
+-- from platform_fee_base pfb
+-- left join trx_counts t
+--     on pfb.sequence_customer_id = t.sequence_customer_id
+--     and pfb.transaction_month = t.transaction_month
+-- left join specific_discount_totals ed
+--     on pfb.sequence_customer_id = ed.sequence_customer_id
+--     and pfb.transaction_month = ed.transaction_month
 
-select
-    mm_id, client_id, db.sequence_customer_id, group_id, matched_product_name,
-    local_created_at, db.transaction_month, transaction_count, amount, cumulative_amount, cumulative_amount_before,
-    price_structure_json,
-    price_minimum_revenue,
-    pricing_type, consumes_saas, should_be_charged,
-    is_percentage,
-    price_per_unit,
-    tier_application_basis,
-    currency,
-    revenue,
-    cumulative_revenue,
-    cumulative_revenue_before,
-    saas_revenue,
-    not_saas_revenue,
-    revenue_type,
-    remaining_minimum,
-    flow, transaction_type, origination_system, source_account_type,
-    country, origin_bank, destination_bank, status,
-    property_filters_json, properties_to_negate,
-    local_updated_at,
-    null as platform_fee_share,
-    null as remaining_minimum_saas_share,
-    case 
-        when trx_receiving_platform_fee > 0 then 0
-        else revenue 
-    end as revenue_total_adjusted
-from discount_base db
-left join trx_counts t
-    on db.sequence_customer_id = t.sequence_customer_id
-    and db.transaction_month = t.transaction_month
+-- union all
+
+-- select
+--     mm_id, client_id, db.sequence_customer_id, group_id, matched_product_name,
+--     local_created_at, db.transaction_month, transaction_count, amount, cumulative_amount, cumulative_amount_before,
+--     price_structure_json,
+--     price_minimum_revenue,
+--     pricing_type, consumes_saas, should_be_charged,
+--     is_percentage,
+--     price_per_unit,
+--     tier_application_basis,
+--     currency,
+--     revenue,
+--     cumulative_revenue,
+--     cumulative_revenue_before,
+--     saas_revenue,
+--     not_saas_revenue,
+--     revenue_type,
+--     remaining_minimum,
+--     flow, transaction_type, origination_system, source_account_type,
+--     country, origin_bank, destination_bank, status,
+--     property_filters_json, properties_to_negate,
+--     local_updated_at,
+--     null as platform_fee_share,
+--     null as remaining_minimum_saas_share,
+--     null as discount_share,
+--     case 
+--         when trx_receiving_platform_fee > 0 then 0
+--         else revenue 
+--     end as revenue_total_adjusted
+-- from discount_base db
+-- left join trx_counts t
+--     on db.sequence_customer_id = t.sequence_customer_id
+--     and db.transaction_month = t.transaction_month
+
+
+
+
+
 
 {% if is_incremental() %}
     where local_updated_at > (select max(local_updated_at) from {{ this }})
