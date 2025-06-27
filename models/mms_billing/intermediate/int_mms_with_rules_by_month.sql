@@ -235,6 +235,50 @@ mm as (
     where upper(title) = 'DISCOUNT'
 )
 
+, true_up_charge as (
+    select
+        null as mm_id,
+        null as amount,
+        null as client_id,
+        r.sequence_customer_id,
+        r.group_id,
+        month as local_created_at,
+        r.title as matched_product_name,
+        coalesce(r.price_structure_json, parse_json('{
+            "price": ' || r.net_total || ',
+            "pricingType": "TRUE_UP_CHARGE"
+        }')) as price_structure_json,
+        r.price_minimum_amount,
+        r.consumes_saas,
+        true as should_be_charged,
+        r.currency,
+        null as flow,
+        null as transaction_type,
+        null as origination_system,
+        null as source_account_type,
+        null as country,
+        null as origin_bank,
+        null as destination_bank,
+        null as status,
+        r.property_filters_json,
+        null as properties_to_negate,
+        date_trunc('month', local_created_at) as transaction_month,
+        month as local_updated_at,
+        hash(null, sequence_customer_id, matched_product_name, local_created_at, null) as hash_match
+    from {{ ref('stg_invoice_pricing_by_month') }} r
+    where upper(title) = 'TRUE UP CHARGE'
+)
+
+, trx_count as (
+    select
+        sequence_customer_id,
+        date_trunc('month', local_created_at) as transaction_month,
+        count(*) as trx_count
+    from matched_raw
+    where consumes_saas
+    group by 1, 2
+)
+
 select
     mm_id, amount, client_id, sequence_customer_id, group_id, local_created_at,
     matched_product_name, price_structure_json, price_minimum_amount,
@@ -256,3 +300,12 @@ union all
 
 select *
 from discount
+
+union all
+
+select tuc.*
+from true_up_charge tuc
+left join trx_count t
+      on tuc.sequence_customer_id = t.sequence_customer_id
+     and tuc.transaction_month = t.transaction_month
+where t.trx_count = 0 or t.trx_count is null
