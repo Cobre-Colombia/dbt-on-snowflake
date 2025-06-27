@@ -391,10 +391,6 @@ with_allocations as (
      and r.transaction_month = gd.transaction_month
 )
 
--- select *
--- from with_allocations
--- where total_discount is not null;
-
 ,
  final_with_distributions as (
     select r.*,
@@ -417,11 +413,11 @@ with_allocations as (
             else 0 
         end, 0) as remaining_minimum_saas_share,
         
-        coalesce(case 
-            when upper(r.matched_product_name) NOT IN ('PLATFORM FEE', 'DISCOUNT') and r.trx_receiving_platform_fee > 0 
-            then total_discount / r.trx_receiving_platform_fee 
-            else 0 
-        end, 0) as discount_share,
+        -- coalesce(case 
+        --     when upper(r.matched_product_name) NOT IN ('PLATFORM FEE', 'DISCOUNT') and r.trx_receiving_platform_fee > 0 
+        --     then total_discount / r.trx_receiving_platform_fee 
+        --     else 0 
+        -- end, 0) as discount_share,
         r.revenue 
             + case 
                 when upper(r.matched_product_name) NOT IN ('PLATFORM FEE', 'DISCOUNT') and r.trx_receiving_platform_fee > 0 
@@ -435,19 +431,14 @@ with_allocations as (
                 then remaining_minimum_saas_share
                 else 0
             end
-            + case 
-                when upper(r.matched_product_name) NOT IN ('PLATFORM FEE', 'DISCOUNT') and r.trx_receiving_platform_fee > 0 
-                then discount_share
-                else 0
-            end
+            -- + case 
+            --     when upper(r.matched_product_name) NOT IN ('PLATFORM FEE', 'DISCOUNT') and r.trx_receiving_platform_fee > 0 
+            --     then discount_share
+            --     else 0
+            -- end
         as revenue_total_adjusted
     from with_allocations r
 )
-
--- select *
--- from final_with_distributions
--- where total_discount is not null;
-
 
 select
     mm_id, client_id, sequence_customer_id, group_id, matched_product_name,
@@ -475,13 +466,15 @@ select
     not_saas_revenue,
     revenue_type,
     remaining_minimum,
+    --total_discount as discount,
+    --'general_invoice_discount' as discount_type,
     flow, transaction_type, origination_system, source_account_type,
     country, origin_bank, destination_bank, status,
     property_filters_json, properties_to_negate,
     local_updated_at,
     platform_fee_share,
     remaining_minimum_saas_share,
-    discount_share,
+    --discount_share,
     revenue_total_adjusted
 from final_with_distributions
 -- where total_discount is not null;
@@ -499,23 +492,26 @@ select
     price_per_unit,
     tier_application_basis,
     currency,
-    revenue + ed.total_discount as revenue,
+    --revenue + ed.total_discount as revenue,
+    revenue,
     cumulative_revenue,
     cumulative_revenue_before,
     saas_revenue,
     not_saas_revenue,
     revenue_type,
     remaining_minimum,
+    --total_discount as discount,
+    --'platform_fee_invoice_discount' as discount_type,
     flow, transaction_type, origination_system, source_account_type,
     country, origin_bank, destination_bank, status,
     property_filters_json, properties_to_negate,
     local_updated_at,
     null as platform_fee_share,
     null as remaining_minimum_saas_share,
-    null as discount_share,
+    --null as discount_share,
     case 
         when trx_receiving_platform_fee > 0 then 0
-        else revenue 
+        else revenue + ed.total_discount 
     end as revenue_total_adjusted
 from platform_fee_base pfb
 left join trx_counts t
@@ -544,13 +540,15 @@ select
     not_saas_revenue,
     revenue_type,
     remaining_minimum,
+    --revenue as discount,
+    --'discount_row' as discount_type,
     flow, transaction_type, origination_system, source_account_type,
     country, origin_bank, destination_bank, status,
     property_filters_json, properties_to_negate,
     local_updated_at,
     null as platform_fee_share,
     null as remaining_minimum_saas_share,
-    null as discount_share,
+    --null as discount_share,
     case 
         when trx_receiving_platform_fee > 0 then 0
         else revenue 
