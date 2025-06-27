@@ -18,14 +18,14 @@ with rules as (
         consumes_saas,
         property_filters_json,
 
-        array_to_string(case when is_array(try_parse_json(property_filters_json):flow) then try_parse_json(property_filters_json):flow else null end, ',') as flow_filters,
-        array_to_string(case when is_array(try_parse_json(property_filters_json):transaction_type) then try_parse_json(property_filters_json):transaction_type else null end, ',') as transaction_type_filters,
-        array_to_string(case when is_array(try_parse_json(property_filters_json):origination_system) then try_parse_json(property_filters_json):origination_system else null end, ',') as origination_system_filters,
-        array_to_string(case when is_array(try_parse_json(property_filters_json):source_account_type) then try_parse_json(property_filters_json):source_account_type else null end, ',') as source_account_type_filters,
-        array_to_string(case when is_array(try_parse_json(property_filters_json):country) then try_parse_json(property_filters_json):country else null end, ',') as country_filters,
-        array_to_string(case when is_array(try_parse_json(property_filters_json):origin_bank) then try_parse_json(property_filters_json):origin_bank else null end, ',') as origin_bank_filters,
-        array_to_string(case when is_array(try_parse_json(property_filters_json):destination_bank) then try_parse_json(property_filters_json):destination_bank else null end, ',') as destination_bank_filters,
-        array_to_string(case when is_array(try_parse_json(property_filters_json):status) then try_parse_json(property_filters_json):status else null end, ',') as status_filters,
+        upper(array_to_string(case when is_array(try_parse_json(property_filters_json):flow) then try_parse_json(property_filters_json):flow else null end, ',')) as flow_filters,
+        upper(array_to_string(case when is_array(try_parse_json(property_filters_json):transaction_type) then try_parse_json(property_filters_json):transaction_type else null end, ',')) as transaction_type_filters,
+        upper(array_to_string(case when is_array(try_parse_json(property_filters_json):origination_system) then try_parse_json(property_filters_json):origination_system else null end, ',')) as origination_system_filters,
+        upper(array_to_string(case when is_array(try_parse_json(property_filters_json):source_account_type) then try_parse_json(property_filters_json):source_account_type else null end, ',')) as source_account_type_filters,
+        upper(array_to_string(case when is_array(try_parse_json(property_filters_json):country) then try_parse_json(property_filters_json):country else null end, ',')) as country_filters,
+        upper(array_to_string(case when is_array(try_parse_json(property_filters_json):origin_bank) then try_parse_json(property_filters_json):origin_bank else null end, ',')) as origin_bank_filters,
+        upper(array_to_string(case when is_array(try_parse_json(property_filters_json):destination_bank) then try_parse_json(property_filters_json):destination_bank else null end, ',')) as destination_bank_filters,
+        upper(array_to_string(case when is_array(try_parse_json(property_filters_json):status) then try_parse_json(property_filters_json):status else null end, ',')) as status_filters,
 
         array_to_string(case when is_array(try_parse_json(properties_to_negate)) then try_parse_json(properties_to_negate) else null end, ',') as properties_to_negate_str,
 
@@ -245,7 +245,6 @@ select
     updated_at as local_updated_at,
     hash(mm_id, sequence_customer_id, matched_product_name, local_created_at, amount) as hash_match
 from matched_raw
-where should_be_charged
 
 union all
 

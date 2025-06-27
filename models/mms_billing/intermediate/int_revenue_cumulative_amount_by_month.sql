@@ -18,7 +18,7 @@ with with_date as (
         date_trunc('month', local_created_at) as transaction_month,
         local_updated_at, hash(mm_id, sequence_customer_id, matched_product_name, local_created_at, amount) as hash_match
     from {{ ref('int_mms_with_rules_by_month') }}
-    where upper(matched_product_name) not in ('DISCOUNT', 'PLATFORM FEE')
+    where upper(matched_product_name) not in ('DISCOUNT', 'PLATFORM FEE') and should_be_charged
 ),
 platform_fee_base as (
     select distinct
