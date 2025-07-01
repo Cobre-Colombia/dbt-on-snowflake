@@ -28,7 +28,7 @@ WITH invoice_pricing_by_month AS (
              , DATE_TRUNC('month', i.BILLING_PERIOD_START)           AS PRICE_STRUCTURE_MONTH
              , ROW_NUMBER()
                 OVER (
-                    PARTITION BY I.CUSTOMER_ID, I.BILLING_PERIOD_START, IS_DISCOUNT, P.PRODUCT_NAME
+                    PARTITION BY I.CUSTOMER_ID, I.BILLING_PERIOD_START, IS_DISCOUNT, COALESCE(P.PRODUCT_NAME, ILI.TITLE)
                     ORDER BY I.CALCULATED_AT DESC, ILI.MODIFIED_AT DESC
                     )                                                  AS RN
         FROM {{ source('SEQUENCE', 'INVOICES') }} I
