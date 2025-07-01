@@ -1,3 +1,5 @@
+{{ config(materialized='table') }}
+
 with discount_totals as (
     select
         sequence_customer_id,

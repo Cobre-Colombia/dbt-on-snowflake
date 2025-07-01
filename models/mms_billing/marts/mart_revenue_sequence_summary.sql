@@ -1,3 +1,5 @@
+{{ config(materialized='view') }}
+
 with  sequence_base as (
     select c.id                                                 as customer_id
          , c.legal_name

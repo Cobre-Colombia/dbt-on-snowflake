@@ -1,3 +1,5 @@
+{{ config(materialized='table') }}
+
 select
     mm_id, client_id, db.sequence_customer_id, group_id, matched_product_name,
     local_created_at, db.transaction_month, transaction_count, amount, cumulative_amount, cumulative_amount_before,

@@ -1,3 +1,5 @@
+{{ config(materialized='view') }}
+
 select
     sequence_customer_id,
     date_trunc('month', local_created_at) as transaction_month,

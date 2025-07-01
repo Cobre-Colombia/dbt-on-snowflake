@@ -1,3 +1,5 @@
+{{ config(materialized='table') }}
+
 select
     sequence_customer_id,
     transaction_month,
