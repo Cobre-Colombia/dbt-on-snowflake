@@ -1,33 +1,47 @@
 version: 2
 
 models:
-  - name: invoice_pricing
-    description: "Modelo para calcular los precios de facturación de las facturas."
+  - name: stg_invoice_pricing
+    description: "Modelo de staging para calcular los precios de facturación de las facturas."
     columns:
-      - name: CUSTOMER_ALIASES
-        description: "Alias del cliente."
-      - name: INVOICE_ID
-        description: "ID de la factura."
-      - name: MONTH
-        description: "Mes del periodo de facturación."
-      - name: TITLE
-        description: "Título del ítem de la factura."
-      - name: PRODUCT_NAME
-        description: "Nombre del producto."
-      - name: USAGE_METRIC
-        description: "Métrica de uso."
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: RAW_CLIENT_ID
+        description: "ID del cliente en formato raw."
+      - name: SEQUENCE_CLIENT_NAME
+        description: "Nombre legal del cliente en Sequence."
+      - name: INVOICE_LINE_ITEM_ID
+        description: "ID del ítem de línea de factura."
+      - name: PRICE_ID
+        description: "ID del precio."
+      - name: GROUP_ID
+        description: "ID del grupo."
+      - name: STATUS
+        description: "Estado del precio."
       - name: PRICE_MINIMUM_AMOUNT
         description: "Monto mínimo del precio."
       - name: CONSUMES_SAAS
         description: "Indica si consume SaaS."
-      - name: QUANTITY
-        description: "Cantidad del ítem."
-      - name: RATE
-        description: "Tasa aplicada al ítem."
-      - name: PROPERTY_FILTERS
-        description: "Filtros de propiedad aplicados."
       - name: PRICE_STRUCTURE
         description: "Estructura de precios."
+      - name: USAGE_METRIC
+        description: "Métrica de uso."
+      - name: PROPERTY_FILTERS
+        description: "Filtros de propiedad aplicados."
+      - name: PROPERTIES_TO_NEGATE
+        description: "Propiedades a negar."
+      - name: BILLING_MONTH
+        description: "Mes de facturación."
+      - name: MODIFIED_AT
+        description: "Fecha de modificación."
+      - name: IS_DISCOUNT
+        description: "Indica si es un descuento."
+      - name: DISCOUNT_AMOUNT
+        description: "Monto del descuento."
+      - name: PRODUCT_NAME
+        description: "Nombre del producto."
+      - name: TITLE
+        description: "Título del ítem de la factura."
       - name: CURRENCY
         description: "Moneda utilizada."
       - name: NET_TOTAL
@@ -36,13 +50,124 @@ models:
         description: "Total bruto del ítem."
       - name: CALCULATED_AT
         description: "Fecha de cálculo del ítem."
-  - name: payouts_mms
-    description: "Modelo para calcular los pagos MMS."
+      - name: MONTH
+        description: "Mes del periodo de facturación."
+      - name: PRICE_STRUCTURE_MONTH
+        description: "Mes de la estructura de precios."
+      - name: RN
+        description: "Número de fila para deduplicación."
+      - name: CLIENT_ID
+        description: "ID del cliente (exploded)."
+      - name: PROPERTY_FILTERS_JSON
+        description: "Filtros de propiedad en formato JSON."
+      - name: PRICE_STRUCTURE_JSON
+        description: "Estructura de precios en formato JSON."
+
+  - name: stg_payouts_mms
+    description: "Modelo de staging para transacciones de pago MMS."
     columns:
-      - name: AMOUNT
-        description: "Monto de la transacción."
       - name: MM_ID
-        description: "ID del movimiento de dinero."
+        description: "ID del movimiento de dinero (ID original)."
+      - name: AMOUNT
+        description: "Monto de la transacción (TOTAL_AMOUNT original)."
+      - name: LOCAL_CREATED_AT
+        description: "Fecha de creación local (UTC_CREATED_AT original)."
+      - name: CLIENT_ID
+        description: "ID del cliente."
+      - name: EVENTTYPE
+        description: "Tipo de evento."
+      - name: EVENTTIMESTAMP
+        description: "Marca de tiempo del evento."
+      - name: FLOW
+        description: "Flujo de la transacción."
+      - name: TRANSACTION_TYPE
+        description: "Tipo de transacción."
+      - name: ORIGINATION_SYSTEM
+        description: "Sistema de origen de la transacción."
+      - name: SOURCE_ACCOUNT_TYPE
+        description: "Tipo de cuenta de origen."
+      - name: TRANSFER_METHOD
+        description: "Método de transferencia."
+      - name: DESTINATION_BANK
+        description: "Banco de destino."
+      - name: ORIGIN_BANK
+        description: "Banco de origen."
+      - name: COUNTRY
+        description: "País de la transacción."
+
+  - name: stg_payin_mms
+    description: "Modelo de staging para transacciones de ingreso MMS."
+    columns:
+      - name: MM_ID
+        description: "ID del movimiento de dinero (ID original)."
+      - name: AMOUNT
+        description: "Monto de la transacción (TOTAL_AMOUNT original)."
+      - name: LOCAL_CREATED_AT
+        description: "Fecha de creación local (UTC_CREATED_AT original)."
+      - name: CLIENT_ID
+        description: "ID del cliente."
+      - name: EVENTTYPE
+        description: "Tipo de evento."
+      - name: EVENTTIMESTAMP
+        description: "Marca de tiempo del evento."
+      - name: FLOW
+        description: "Flujo de la transacción."
+      - name: TRANSACTION_TYPE
+        description: "Tipo de transacción."
+      - name: ORIGINATION_SYSTEM
+        description: "Sistema de origen de la transacción."
+      - name: SOURCE_ACCOUNT_TYPE
+        description: "Tipo de cuenta de origen."
+      - name: TRANSFER_METHOD
+        description: "Método de transferencia."
+      - name: DESTINATION_BANK
+        description: "Banco de destino."
+      - name: ORIGIN_BANK
+        description: "Banco de origen."
+      - name: COUNTRY
+        description: "País de la transacción."
+
+  - name: stg_balance_recharges
+    description: "Modelo de staging para recargas de balance MMS."
+    columns:
+      - name: MM_ID
+        description: "ID del movimiento de dinero (ID original)."
+      - name: AMOUNT
+        description: "Monto de la transacción (TOTAL_AMOUNT original)."
+      - name: LOCAL_CREATED_AT
+        description: "Fecha de creación local (UTC_CREATED_AT original)."
+      - name: CLIENT_ID
+        description: "ID del cliente."
+      - name: EVENTTYPE
+        description: "Tipo de evento."
+      - name: EVENTTIMESTAMP
+        description: "Marca de tiempo del evento."
+      - name: FLOW
+        description: "Flujo de la transacción."
+      - name: TRANSACTION_TYPE
+        description: "Tipo de transacción."
+      - name: ORIGINATION_SYSTEM
+        description: "Sistema de origen de la transacción."
+      - name: SOURCE_ACCOUNT_TYPE
+        description: "Tipo de cuenta de origen."
+      - name: TRANSFER_METHOD
+        description: "Método de transferencia."
+      - name: DESTINATION_BANK
+        description: "Banco de destino."
+      - name: ORIGIN_BANK
+        description: "Banco de origen."
+      - name: COUNTRY
+        description: "País de la transacción."
+
+  - name: stg_dac_mms
+    description: "Modelo de staging para transacciones DAC MMS."
+    columns:
+      - name: MM_ID
+        description: "ID del movimiento de dinero (ID original)."
+      - name: AMOUNT
+        description: "Monto de la transacción (TOTAL_AMOUNT original)."
+      - name: LOCAL_CREATED_AT
+        description: "Fecha de creación local (UTC_CREATED_AT original)."
       - name: CLIENT_ID
         description: "ID del cliente."
       - name: EVENTTYPE

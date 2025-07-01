@@ -1,3 +1,9 @@
+{{ config(
+    materialized='incremental',
+    unique_key=['MM_ID', 'SEQUENCE_CUSTOMER_ID', 'MATCHED_PRODUCT_NAME', 'LOCAL_CREATED_AT', 'AMOUNT'],
+    incremental_strategy='merge'
+) }}
+
 with with_date as (
     select
         mm_id, amount, client_id, sequence_customer_id, group_id, local_created_at,
@@ -216,3 +222,6 @@ from ranked_revenue r
 left join global_minimums g
     on r.sequence_customer_id = g.sequence_customer_id
     and r.transaction_month = g.transaction_month
+{% if is_incremental() %}
+    and r.transaction_month >= dateadd(month, -3, current_date())
+{% endif %}

@@ -1,3 +1,9 @@
+{{ config(
+    materialized='incremental',
+    unique_key=['MM_ID', 'SEQUENCE_CUSTOMER_ID', 'MATCHED_PRODUCT_NAME', 'LOCAL_CREATED_AT', 'AMOUNT'],
+    incremental_strategy='merge'
+) }}
+
 with with_allocations as (
     select
         r.*,
@@ -102,3 +108,6 @@ select
     remaining_minimum_saas_share,
     revenue_total_adjusted
 from final_with_distributions
+{% if is_incremental() %}
+    where transaction_month >= dateadd(month, -3, current_date())
+{% endif %}

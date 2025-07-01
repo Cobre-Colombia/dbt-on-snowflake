@@ -1,3 +1,9 @@
+{{ config(
+    materialized='incremental',
+    unique_key=['SEQUENCE_CUSTOMER_ID', 'MATCHED_PRODUCT_NAME', 'TRANSACTION_MONTH', 'AMOUNT'],
+    incremental_strategy='merge'
+) }}
+
 select distinct
     null as mm_id,
     null as client_id,
@@ -39,3 +45,7 @@ select distinct
     local_updated_at
 from {{ ref('mart_rules') }} r
 where upper(matched_product_name) like '%DISCOUNT%'
+{% if is_incremental() %}
+    and r.transaction_month >= dateadd(month, -3, current_date())
+{% endif %}
+

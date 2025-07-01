@@ -1,4 +1,7 @@
-{% set cutoff_date = modules.datetime.datetime.utcnow().date() - modules.datetime.timedelta(days=0) %}
+{{ config(materialized='view') }}
+
+{% set end_cutoff_date = modules.datetime.datetime.now().date() - modules.datetime.timedelta(days=0) %}
+{% set start_cutoff_date = (end_cutoff_date.replace(day=1) - modules.datetime.timedelta(days=90)).replace(day=1) %}
 
 with rules as (
     select distinct
@@ -43,22 +46,22 @@ mm as (
         select mm_id, coalesce(client_id_edit, client_id) as client_id, eventtype, eventtimestamp, flow, transaction_type, origination_system,
                source_account_type, destination_bank, origin_bank, country, status, amount, updated_at,
                local_created_at
-        from {{ ref('stg_payouts_mms') }} where local_created_at < '{{ cutoff_date }}'
+        from {{ ref('stg_payouts_mms') }} where local_created_at between '{{ start_cutoff_date }}' and '{{ end_cutoff_date }}'
         union all
         select mm_id, coalesce(client_id_edit, client_id) as client_id, eventtype, eventtimestamp, flow, transaction_type, origination_system,
                source_account_type, destination_bank, origin_bank, country, status, amount, updated_at,
                local_created_at
-        from {{ ref('stg_payin_mms') }} where local_created_at < '{{ cutoff_date }}'
+        from {{ ref('stg_payin_mms') }} where local_created_at between '{{ start_cutoff_date }}' and '{{ end_cutoff_date }}'
         union all
         select mm_id, coalesce(client_id_edit, client_id) as client_id, eventtype, eventtimestamp, flow, transaction_type, origination_system,
                source_account_type, destination_bank, origin_bank, country, status, amount, updated_at,
                local_created_at
-        from {{ ref('stg_dac_mms') }} where local_created_at < '{{ cutoff_date }}'
+        from {{ ref('stg_dac_mms') }} where local_created_at between '{{ start_cutoff_date }}' and '{{ end_cutoff_date }}'
         union all
         select mm_id, coalesce(client_id_edit, client_id) as client_id, eventtype, eventtimestamp, flow, transaction_type, origination_system,
                source_account_type, destination_bank, origin_bank, country, status, amount, updated_at,
                local_created_at
-        from {{ ref('stg_balance_recharges') }} where local_created_at < '{{ cutoff_date }}'
+        from {{ ref('stg_balance_recharges') }} where local_created_at between '{{ start_cutoff_date }}' and '{{ end_cutoff_date }}'
     )
 )
 , 
