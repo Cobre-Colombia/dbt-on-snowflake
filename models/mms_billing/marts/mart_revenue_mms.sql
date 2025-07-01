@@ -24,9 +24,6 @@ with with_allocations as (
     left join {{ ref('int_revenue_discount_general') }} gd
       on r.sequence_customer_id = gd.sequence_customer_id
       and r.transaction_month = gd.transaction_month
-    {% if is_incremental() %}
-      where r.transaction_month >= (select max(transaction_month) from {{ this }})
-    {% endif %}
 )
 ,
  final_with_distributions as (
@@ -111,3 +108,6 @@ select
     remaining_minimum_saas_share,
     revenue_total_adjusted
 from final_with_distributions
+{% if is_incremental() %}
+    where transaction_month >= dateadd(month, -3, current_date())
+{% endif %}

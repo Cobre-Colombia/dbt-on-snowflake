@@ -52,3 +52,6 @@ select distinct
 from {{ ref('mart_rules') }} r
 where upper(matched_product_name) = 'PLATFORM FEE'
     and r.price_structure_json:pricingType::string = 'FIXED'
+{% if is_incremental() %}
+    and r.transaction_month >= dateadd(month, -3, current_date())
+{% endif %}

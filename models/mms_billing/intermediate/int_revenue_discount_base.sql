@@ -45,3 +45,7 @@ select distinct
     local_updated_at
 from {{ ref('mart_rules') }} r
 where upper(matched_product_name) like '%DISCOUNT%'
+{% if is_incremental() %}
+    and r.transaction_month >= dateadd(month, -3, current_date())
+{% endif %}
+

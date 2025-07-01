@@ -16,9 +16,6 @@ with with_date as (
         local_updated_at, hash(mm_id, sequence_customer_id, matched_product_name, local_created_at, amount) as hash_match
     from {{ ref('mart_rules') }}
     where upper(matched_product_name) not in ('DISCOUNT', 'PLATFORM FEE', 'TRUE UP CHARGE') and should_be_charged
-    {% if is_incremental() %}
-      and date_trunc('month', local_created_at) >= (select max(transaction_month) from {{ this }})
-    {% endif %}
 )
 ,
 ranked as (
@@ -225,3 +222,6 @@ from ranked_revenue r
 left join global_minimums g
     on r.sequence_customer_id = g.sequence_customer_id
     and r.transaction_month = g.transaction_month
+{% if is_incremental() %}
+    and r.transaction_month >= dateadd(month, -3, current_date())
+{% endif %}

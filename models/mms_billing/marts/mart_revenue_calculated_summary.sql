@@ -3,7 +3,7 @@
 with base_calculated as (
     select sequence_customer_id
          , group_id
-         , matched_product_name
+         , matched_product_name as product_name
          , pricing_type
          , tier_application_basis
          , date_trunc('MONTH', transaction_month) as transaction_month

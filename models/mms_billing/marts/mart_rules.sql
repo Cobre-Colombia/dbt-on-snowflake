@@ -31,5 +31,5 @@ with all_rules as (
 select *
 from all_rules
 {% if is_incremental() %}
-  where transaction_month >= (select max(transaction_month) from {{ this }})
+  where transaction_month >= dateadd(month, -3, current_date())
 {% endif %}
