@@ -1,4 +1,4 @@
-{{ config(materialized='ephemeral') }}
+{{ config(materialized='view') }}
 
 {% set end_cutoff_date = modules.datetime.datetime.now().date() - modules.datetime.timedelta(days=0) %}
 {% set start_cutoff_date = (end_cutoff_date.replace(day=1) - modules.datetime.timedelta(days=90)).replace(day=1) %}

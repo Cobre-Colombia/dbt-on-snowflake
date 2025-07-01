@@ -1,6 +1,6 @@
 {{ config(
     materialized='incremental',
-    unique_key=['MM_ID', 'SEQUENCE_CUSTOMER_ID', 'MATCHED_PRODUCT_NAME', 'TRANSACTION_MONTH', 'AMOUNT'],
+    unique_key=['MM_ID', 'SEQUENCE_CUSTOMER_ID', 'MATCHED_PRODUCT_NAME', 'LOCAL_CREATED_AT', 'AMOUNT'],
     incremental_strategy='merge'
 ) }}
 
