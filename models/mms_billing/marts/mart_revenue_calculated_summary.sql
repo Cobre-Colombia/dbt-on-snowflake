@@ -1,14 +1,14 @@
 with base_calculated as (
     select sequence_customer_id
          , group_id
-         , product_name
+         , matched_product_name as product_name
          , pricing_type
          , tier_application_basis
          , date_trunc('MONTH', transaction_month) as transaction_month
          , currency
-         , max(accumulated_revenue)               as calculated_revenue
+         , max(cumulative_revenue)               as calculated_revenue
          , case
-               when tier_application_basis = 'amount' then max(accumulated_amount)
+               when tier_application_basis = 'amount' then max(cumulative_amount)
                else max(transaction_count) end    as tier_application_value
     from {{ ref('mart_revenue_calculated') }}
     group by 1, 2, 3, 4, 5, 6, 7
@@ -18,9 +18,9 @@ with base_calculated as (
            sequence_customer_id
          , group_id
          , pricing_type
-         , minimum_revenue
+         , price_minimum_revenue as minimum_revenue
     from {{ ref('mart_revenue_calculated') }}
-    where is_saas_transaction = true
+    where consumes_saas = true
     )
 
    , distinct_month as (
@@ -45,7 +45,7 @@ with base_calculated as (
         and m.group_id = cg.group_id
         and m.pricing_type = cg.pricing_type
         and date_trunc('MONTH', m.transaction_month) = dm.transaction_month
-        and m.is_saas_transaction = true
+        and m.consumes_saas = true
     group by 1, 2, 3, 4, 5, 6, 7
     )
 
@@ -61,7 +61,7 @@ with base_calculated as (
          , trx_count.transaction_count
          , min(
                    case
-                       when trx_count.transaction_count > 0 then r.remaining_minimum_amount
+                       when trx_count.transaction_count > 0 then r.remaining_minimum
                        end
            )                                        as calculated_revenue
          , 1                                        as tier_application_value
@@ -70,7 +70,7 @@ with base_calculated as (
         on r.sequence_customer_id = trx_count.sequence_customer_id
         and r.transaction_month::date = trx_count.transaction_month::date
     where trx_count.transaction_count > 0
-      and r.product_name not ilike '%discount%'
+      and r.matched_product_name not ilike '%discount%'
     group by 1, 2, 3, 4, 5, 6, 7, 8
     )
 
