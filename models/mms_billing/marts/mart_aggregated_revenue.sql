@@ -1,13 +1,3 @@
-{{ config(
-    materialized='incremental',
-    incremental_strategy='merge',
-    unique_key=['money_movement_id', 'sequence_customer_id', 'product_name', 'local_created_at'],
-    post_hook=[
-        "grant select on table {{ this }} to role DATA_DEV_L1",
-        "grant select on table {{ this }} to role SALES_OPS_DEV_L0"
-    ]
-) }}
-
 select 
     mm_id as money_movement_id
     , client_id
@@ -37,7 +27,7 @@ select
     , revenue_type as revenue_type
     , tier_application_basis 
     , local_updated_at
-from {{ ref('int_revenue_cumulative_amount_by_month') }}
+from {{ ref('mart_revenue') }}
 where 1=1
 {% if is_incremental() %}
     and local_updated_at > (select max(local_updated_at) from {{ this }})

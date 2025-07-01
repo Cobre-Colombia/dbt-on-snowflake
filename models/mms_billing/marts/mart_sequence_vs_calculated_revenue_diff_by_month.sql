@@ -1,14 +1,7 @@
-{{ config(
-    post_hook=[
-        "grant select on table {{ this }} to role DATA_DEV_L1",
-        "grant select on table {{ this }} to role SALES_OPS_DEV_L0"
-    ]
-) }}
-
 WITH BASE_CALCULATED AS (
     SELECT SEQUENCE_CUSTOMER_ID, GROUP_ID, PRODUCT_NAME, PRICING_TYPE, TIER_APPLICATION_BASIS, DATE_TRUNC('MONTH', TRANSACTION_MONTH) AS TRANSACTION_MONTH, CURRENCY, MAX(ACCUMULATED_REVENUE) AS CALCULATED_REVENUE,
         CASE WHEN TIER_APPLICATION_BASIS = 'amount' THEN MAX(ACCUMULATED_AMOUNT) ELSE MAX(TRANSACTION_COUNT) END AS TIER_APPLICATION_VALUE
-    FROM {{ ref('mart_revenue_by_group_id_by_month') }}
+    FROM {{ ref('mart_aggregated_revenue') }}
     GROUP BY 1, 2, 3, 4, 5, 6, 7
 )
 -- 1. CTE base de clientes-grupo-producto y tipo de pricing
@@ -18,14 +11,14 @@ WITH BASE_CALCULATED AS (
         GROUP_ID, 
         PRICING_TYPE, 
         MINIMUM_REVENUE
-    FROM {{ ref('mart_revenue_by_group_id_by_month') }}
+    FROM {{ ref('mart_aggregated_revenue') }}
     WHERE IS_SAAS_TRANSACTION = TRUE
 )
 
 , DISTINCT_MONTH AS (
     SELECT DISTINCT 
         DATE_TRUNC('MONTH', TRANSACTION_MONTH) AS TRANSACTION_MONTH
-    FROM {{ ref('mart_revenue_by_group_id_by_month') }}
+    FROM {{ ref('mart_aggregated_revenue') }}
 )
 
 , TRX_COUNT AS (
@@ -40,7 +33,7 @@ WITH BASE_CALCULATED AS (
         MAX(m.TRANSACTION_COUNT) AS TRANSACTION_COUNT
     FROM CUSTOMER_GROUPS cg
     CROSS JOIN DISTINCT_MONTH dm
-    LEFT JOIN {{ ref('mart_revenue_by_group_id_by_month') }} m
+    LEFT JOIN {{ ref('mart_aggregated_revenue') }} m
         ON m.SEQUENCE_CUSTOMER_ID = cg.SEQUENCE_CUSTOMER_ID
         AND m.GROUP_ID = cg.GROUP_ID
         AND m.PRICING_TYPE = cg.PRICING_TYPE
@@ -60,7 +53,7 @@ WITH BASE_CALCULATED AS (
                 END
             ) AS CALCULATED_REVENUE
         ,1 AS TIER_APPLICATION_VALUE
-    FROM {{ ref('mart_revenue_by_group_id_by_month') }} r
+    FROM {{ ref('mart_aggregated_revenue') }} r
     LEFT JOIN TRX_COUNT
         ON r.SEQUENCE_CUSTOMER_ID = TRX_COUNT.SEQUENCE_CUSTOMER_ID
         AND r.TRANSACTION_MONTH::DATE = TRX_COUNT.TRANSACTION_MONTH::DATE

@@ -24,10 +24,10 @@ models:
   cobre_data_hub:
     mms_billing:
       staging:
-        +materialized: view
+        +materialized: table
         +schema: dbt_{{ env }}
       intermediate:
-        +materialized: view
+        +materialized: table
         +schema: dbt_{{ env }}
       marts:
         +materialized: table
