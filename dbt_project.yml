@@ -7,8 +7,8 @@ profile: 'cobre_data_hub'
 model-paths: ["models"]
 seed-paths: ["seeds"]
 macro-paths: ["macros"]
-
 target-path: "target"
+
 clean-targets:
   - "target"
   - "dbt_packages"
@@ -21,14 +21,22 @@ vars:
   billing_period_end: "2025-06-30"
 
 models:
-  cobre_data_hub:
+  dbt_cobre_data_hub:
+    +grants:
+      select: ["DATA_DEV_L1"]
     mms_billing:
       staging:
         +materialized: view
-        +schema: dbt_{{ env }}
+        +tags: ["staging"]
+        +docs:
+          node_color: peru
       intermediate:
-        +materialized: view
-        +schema: dbt_{{ env }}
+        +materialized: table
+        +tags: ["intermediate"]
+        +docs:
+          node_color: silver
       marts:
         +materialized: table
-        +schema: dbt_{{ env }}
+        +tags: ["marts"]
+        +docs:
+          node_color: gold
