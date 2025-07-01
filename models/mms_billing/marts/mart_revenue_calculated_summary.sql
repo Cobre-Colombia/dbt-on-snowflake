@@ -10,7 +10,7 @@ with base_calculated as (
          , currency
          , max(cumulative_revenue)               as calculated_revenue
          , case
-               when tier_application_basis = 'amount' then max(accumulated_revenue)
+               when tier_application_basis = 'amount' then max(cumulative_amount)
                else max(transaction_count) end    as tier_application_value
     from {{ ref('mart_revenue_calculated') }}
     group by 1, 2, 3, 4, 5, 6, 7
