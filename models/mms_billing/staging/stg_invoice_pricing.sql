@@ -1,9 +1,3 @@
-{{ config(
-    post_hook=[
-        "grant select on view {{ this }} to role DATA_DEV_L1"
-    ]
-) }}
-
 WITH invoice_pricing_by_month AS (
     SELECT *
     FROM (
