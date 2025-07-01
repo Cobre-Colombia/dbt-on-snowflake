@@ -1,0 +1,536 @@
+version: 2
+
+models:
+  - name: int_rules_mms
+    description: "Modelo intermediate que aplica las reglas de facturación a las transacciones MMS."
+    columns:
+      - name: MM_ID
+        description: "ID del movimiento de dinero."
+      - name: AMOUNT
+        description: "Monto de la transacción."
+      - name: CLIENT_ID
+        description: "ID del cliente."
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: GROUP_ID
+        description: "ID del grupo."
+      - name: LOCAL_CREATED_AT
+        description: "Fecha de creación local."
+      - name: MATCHED_PRODUCT_NAME
+        description: "Nombre del producto que coincide con la regla."
+      - name: PRICE_STRUCTURE_JSON
+        description: "Estructura de precios en formato JSON."
+      - name: PRICE_MINIMUM_AMOUNT
+        description: "Monto mínimo del precio."
+      - name: CONSUMES_SAAS
+        description: "Indica si consume SaaS."
+      - name: SHOULD_BE_CHARGED
+        description: "Indica si la transacción debe ser cobrada."
+      - name: CURRENCY
+        description: "Moneda utilizada."
+      - name: FLOW
+        description: "Flujo de la transacción."
+      - name: TRANSACTION_TYPE
+        description: "Tipo de transacción."
+      - name: ORIGINATION_SYSTEM
+        description: "Sistema de origen."
+      - name: SOURCE_ACCOUNT_TYPE
+        description: "Tipo de cuenta de origen."
+      - name: COUNTRY
+        description: "País de la transacción."
+      - name: ORIGIN_BANK
+        description: "Banco de origen."
+      - name: DESTINATION_BANK
+        description: "Banco de destino."
+      - name: STATUS
+        description: "Estado de la transacción."
+      - name: PROPERTY_FILTERS_JSON
+        description: "Filtros de propiedad en formato JSON."
+      - name: PROPERTIES_TO_NEGATE
+        description: "Propiedades a negar."
+      - name: TRANSACTION_MONTH
+        description: "Mes de la transacción."
+      - name: LOCAL_UPDATED_AT
+        description: "Fecha de actualización local."
+      - name: HASH_MATCH
+        description: "Hash único para identificación de coincidencias."
+
+  - name: int_rules_platform_fee_always_charged
+    description: "Modelo intermediate para reglas de platform fee que siempre se cobran."
+    columns:
+      - name: MM_ID
+        description: "ID del movimiento de dinero (null para platform fees)."
+      - name: AMOUNT
+        description: "Monto de la transacción (null para platform fees)."
+      - name: CLIENT_ID
+        description: "ID del cliente."
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: GROUP_ID
+        description: "ID del grupo."
+      - name: LOCAL_CREATED_AT
+        description: "Fecha de creación local."
+      - name: MATCHED_PRODUCT_NAME
+        description: "Nombre del producto (PLATFORM FEE)."
+      - name: PRICE_STRUCTURE_JSON
+        description: "Estructura de precios en formato JSON."
+      - name: PRICE_MINIMUM_AMOUNT
+        description: "Monto mínimo del precio."
+      - name: CONSUMES_SAAS
+        description: "Indica si consume SaaS."
+      - name: SHOULD_BE_CHARGED
+        description: "Siempre true para platform fees."
+      - name: CURRENCY
+        description: "Moneda utilizada."
+      - name: FLOW
+        description: "Flujo de la transacción (null para platform fees)."
+      - name: TRANSACTION_TYPE
+        description: "Tipo de transacción (null para platform fees)."
+      - name: ORIGINATION_SYSTEM
+        description: "Sistema de origen (null para platform fees)."
+      - name: SOURCE_ACCOUNT_TYPE
+        description: "Tipo de cuenta de origen (null para platform fees)."
+      - name: COUNTRY
+        description: "País de la transacción (null para platform fees)."
+      - name: ORIGIN_BANK
+        description: "Banco de origen (null para platform fees)."
+      - name: DESTINATION_BANK
+        description: "Banco de destino (null para platform fees)."
+      - name: STATUS
+        description: "Estado de la transacción (null para platform fees)."
+      - name: PROPERTY_FILTERS_JSON
+        description: "Filtros de propiedad en formato JSON."
+      - name: PROPERTIES_TO_NEGATE
+        description: "Propiedades a negar (null para platform fees)."
+      - name: TRANSACTION_MONTH
+        description: "Mes de la transacción."
+      - name: LOCAL_UPDATED_AT
+        description: "Fecha de actualización local."
+      - name: HASH_MATCH
+        description: "Hash único para identificación."
+
+  - name: int_rules_true_up_charge
+    description: "Modelo intermediate para reglas de true up charge."
+    columns:
+      - name: MM_ID
+        description: "ID del movimiento de dinero (null para true up charges)."
+      - name: AMOUNT
+        description: "Monto de la transacción (null para true up charges)."
+      - name: CLIENT_ID
+        description: "ID del cliente."
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: GROUP_ID
+        description: "ID del grupo."
+      - name: LOCAL_CREATED_AT
+        description: "Fecha de creación local."
+      - name: MATCHED_PRODUCT_NAME
+        description: "Nombre del producto (TRUE UP CHARGE)."
+      - name: PRICE_STRUCTURE_JSON
+        description: "Estructura de precios en formato JSON."
+      - name: PRICE_MINIMUM_AMOUNT
+        description: "Monto mínimo del precio."
+      - name: CONSUMES_SAAS
+        description: "Indica si consume SaaS."
+      - name: SHOULD_BE_CHARGED
+        description: "Siempre true para true up charges."
+      - name: CURRENCY
+        description: "Moneda utilizada."
+      - name: FLOW
+        description: "Flujo de la transacción (null para true up charges)."
+      - name: TRANSACTION_TYPE
+        description: "Tipo de transacción (null para true up charges)."
+      - name: ORIGINATION_SYSTEM
+        description: "Sistema de origen (null para true up charges)."
+      - name: SOURCE_ACCOUNT_TYPE
+        description: "Tipo de cuenta de origen (null para true up charges)."
+      - name: COUNTRY
+        description: "País de la transacción (null para true up charges)."
+      - name: ORIGIN_BANK
+        description: "Banco de origen (null para true up charges)."
+      - name: DESTINATION_BANK
+        description: "Banco de destino (null para true up charges)."
+      - name: STATUS
+        description: "Estado de la transacción (null para true up charges)."
+      - name: PROPERTY_FILTERS_JSON
+        description: "Filtros de propiedad en formato JSON."
+      - name: PROPERTIES_TO_NEGATE
+        description: "Propiedades a negar (null para true up charges)."
+      - name: TRANSACTION_MONTH
+        description: "Mes de la transacción."
+      - name: LOCAL_UPDATED_AT
+        description: "Fecha de actualización local."
+      - name: HASH_MATCH
+        description: "Hash único para identificación."
+
+  - name: int_rules_discounts
+    description: "Modelo intermediate para reglas de descuentos."
+    columns:
+      - name: MM_ID
+        description: "ID del movimiento de dinero (null para descuentos)."
+      - name: AMOUNT
+        description: "Monto de la transacción (null para descuentos)."
+      - name: CLIENT_ID
+        description: "ID del cliente."
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: GROUP_ID
+        description: "ID del grupo."
+      - name: LOCAL_CREATED_AT
+        description: "Fecha de creación local."
+      - name: MATCHED_PRODUCT_NAME
+        description: "Nombre del producto (DISCOUNT)."
+      - name: PRICE_STRUCTURE_JSON
+        description: "Estructura de precios en formato JSON."
+      - name: PRICE_MINIMUM_AMOUNT
+        description: "Monto mínimo del precio."
+      - name: CONSUMES_SAAS
+        description: "Indica si consume SaaS."
+      - name: SHOULD_BE_CHARGED
+        description: "Siempre true para descuentos."
+      - name: CURRENCY
+        description: "Moneda utilizada."
+      - name: FLOW
+        description: "Flujo de la transacción (null para descuentos)."
+      - name: TRANSACTION_TYPE
+        description: "Tipo de transacción (null para descuentos)."
+      - name: ORIGINATION_SYSTEM
+        description: "Sistema de origen (null para descuentos)."
+      - name: SOURCE_ACCOUNT_TYPE
+        description: "Tipo de cuenta de origen (null para descuentos)."
+      - name: COUNTRY
+        description: "País de la transacción (null para descuentos)."
+      - name: ORIGIN_BANK
+        description: "Banco de origen (null para descuentos)."
+      - name: DESTINATION_BANK
+        description: "Banco de destino (null para descuentos)."
+      - name: STATUS
+        description: "Estado de la transacción (null para descuentos)."
+      - name: PROPERTY_FILTERS_JSON
+        description: "Filtros de propiedad en formato JSON."
+      - name: PROPERTIES_TO_NEGATE
+        description: "Propiedades a negar (null para descuentos)."
+      - name: TRANSACTION_MONTH
+        description: "Mes de la transacción."
+      - name: LOCAL_UPDATED_AT
+        description: "Fecha de actualización local."
+      - name: HASH_MATCH
+        description: "Hash único para identificación."
+
+  - name: int_revenue_mms
+    description: "Modelo intermediate para calcular ingresos de transacciones MMS."
+    columns:
+      - name: MM_ID
+        description: "ID del movimiento de dinero."
+      - name: CLIENT_ID
+        description: "ID del cliente."
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: GROUP_ID
+        description: "ID del grupo."
+      - name: MATCHED_PRODUCT_NAME
+        description: "Nombre del producto que coincide."
+      - name: LOCAL_CREATED_AT
+        description: "Fecha de creación local."
+      - name: TRANSACTION_MONTH
+        description: "Mes de la transacción."
+      - name: TRANSACTION_COUNT
+        description: "Número de transacción."
+      - name: AMOUNT
+        description: "Monto de la transacción."
+      - name: CUMULATIVE_AMOUNT
+        description: "Monto acumulado."
+      - name: CUMULATIVE_AMOUNT_BEFORE
+        description: "Monto acumulado antes de esta transacción."
+      - name: PRICE_STRUCTURE_JSON
+        description: "Estructura de precios en formato JSON."
+      - name: PRICE_MINIMUM_REVENUE
+        description: "Ingreso mínimo del precio."
+      - name: PRICING_TYPE
+        description: "Tipo de precios (LINEAR, VOLUME, GRADUATED)."
+      - name: CONSUMES_SAAS
+        description: "Indica si consume SaaS."
+      - name: SHOULD_BE_CHARGED
+        description: "Indica si debe ser cobrado."
+      - name: LINEAR_PRICE_PER_UNIT
+        description: "Precio por unidad para precios lineales."
+      - name: LINEAR_IS_PERCENTAGE
+        description: "Indica si el precio lineal es porcentual."
+      - name: TIER_PRICE
+        description: "Precio del tier."
+      - name: TIER_FEE
+        description: "Tarifa del tier."
+      - name: TIER_UPPER_BOUND
+        description: "Límite superior del tier."
+      - name: TIER_IS_PERCENTAGE
+        description: "Indica si el tier es porcentual."
+      - name: EFF_TIER_PRICE
+        description: "Precio efectivo del tier."
+      - name: EFF_TIER_FEE
+        description: "Tarifa efectiva del tier."
+      - name: EFF_TIER_IS_PERCENTAGE
+        description: "Indica si el tier efectivo es porcentual."
+      - name: TIER_APPLICATION_BASIS
+        description: "Base de aplicación del tier (amount/count)."
+      - name: CURRENCY
+        description: "Moneda utilizada."
+      - name: REVENUE
+        description: "Ingreso calculado."
+      - name: CUMULATIVE_REVENUE
+        description: "Ingreso acumulado."
+      - name: CUMULATIVE_REVENUE_BEFORE
+        description: "Ingreso acumulado antes de esta transacción."
+      - name: CUMULATIVE_REVENUE_GLOBAL
+        description: "Ingreso acumulado global."
+      - name: CUMULATIVE_REVENUE_GLOBAL_BEFORE
+        description: "Ingreso acumulado global antes de esta transacción."
+      - name: CUMULATIVE_SAAS_REVENUE_GLOBAL
+        description: "Ingreso SaaS acumulado global."
+      - name: CUMULATIVE_SAAS_REVENUE_GLOBAL_BEFORE
+        description: "Ingreso SaaS acumulado global antes de esta transacción."
+      - name: SAAS_REVENUE
+        description: "Ingreso SaaS."
+      - name: NOT_SAAS_REVENUE
+        description: "Ingreso no SaaS."
+      - name: REVENUE_TYPE
+        description: "Tipo de ingreso."
+      - name: REMAINING_MINIMUM
+        description: "Mínimo restante."
+      - name: FLOW
+        description: "Flujo de la transacción."
+      - name: TRANSACTION_TYPE
+        description: "Tipo de transacción."
+      - name: ORIGINATION_SYSTEM
+        description: "Sistema de origen."
+      - name: SOURCE_ACCOUNT_TYPE
+        description: "Tipo de cuenta de origen."
+      - name: COUNTRY
+        description: "País de la transacción."
+      - name: ORIGIN_BANK
+        description: "Banco de origen."
+      - name: DESTINATION_BANK
+        description: "Banco de destino."
+      - name: STATUS
+        description: "Estado de la transacción."
+      - name: PROPERTY_FILTERS_JSON
+        description: "Filtros de propiedad en formato JSON."
+      - name: PROPERTIES_TO_NEGATE
+        description: "Propiedades a negar."
+      - name: LOCAL_UPDATED_AT
+        description: "Fecha de actualización local."
+
+  - name: int_revenue_platform_fee_base
+    description: "Modelo intermediate base para ingresos de platform fee."
+    columns:
+      - name: MM_ID
+        description: "ID del movimiento de dinero (null para platform fees)."
+      - name: CLIENT_ID
+        description: "ID del cliente."
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: GROUP_ID
+        description: "ID del grupo."
+      - name: MATCHED_PRODUCT_NAME
+        description: "Nombre del producto (PLATFORM FEE)."
+      - name: LOCAL_CREATED_AT
+        description: "Fecha de creación local."
+      - name: TRANSACTION_MONTH
+        description: "Mes de la transacción."
+      - name: PRICE_STRUCTURE_JSON
+        description: "Estructura de precios en formato JSON."
+      - name: PRICE_MINIMUM_AMOUNT
+        description: "Monto mínimo del precio."
+      - name: CONSUMES_SAAS
+        description: "Indica si consume SaaS."
+      - name: SHOULD_BE_CHARGED
+        description: "Siempre true para platform fees."
+      - name: CURRENCY
+        description: "Moneda utilizada."
+      - name: REVENUE
+        description: "Ingreso calculado del platform fee."
+      - name: FLOW
+        description: "Flujo de la transacción (null para platform fees)."
+      - name: TRANSACTION_TYPE
+        description: "Tipo de transacción (null para platform fees)."
+      - name: ORIGINATION_SYSTEM
+        description: "Sistema de origen (null para platform fees)."
+      - name: SOURCE_ACCOUNT_TYPE
+        description: "Tipo de cuenta de origen (null para platform fees)."
+      - name: COUNTRY
+        description: "País de la transacción (null para platform fees)."
+      - name: ORIGIN_BANK
+        description: "Banco de origen (null para platform fees)."
+      - name: DESTINATION_BANK
+        description: "Banco de destino (null para platform fees)."
+      - name: STATUS
+        description: "Estado de la transacción (null para platform fees)."
+      - name: PROPERTY_FILTERS_JSON
+        description: "Filtros de propiedad en formato JSON."
+      - name: PROPERTIES_TO_NEGATE
+        description: "Propiedades a negar (null para platform fees)."
+      - name: LOCAL_UPDATED_AT
+        description: "Fecha de actualización local."
+
+  - name: int_revenue_platform_fee_totals
+    description: "Modelo intermediate para totales de platform fee."
+    columns:
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: TRANSACTION_MONTH
+        description: "Mes de la transacción."
+      - name: TOTAL_PLATFORM_FEE
+        description: "Total de platform fees para el cliente y mes."
+
+  - name: int_revenue_discount_base
+    description: "Modelo intermediate base para ingresos de descuentos."
+    columns:
+      - name: MM_ID
+        description: "ID del movimiento de dinero (null para descuentos)."
+      - name: CLIENT_ID
+        description: "ID del cliente."
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: GROUP_ID
+        description: "ID del grupo."
+      - name: MATCHED_PRODUCT_NAME
+        description: "Nombre del producto (DISCOUNT)."
+      - name: LOCAL_CREATED_AT
+        description: "Fecha de creación local."
+      - name: TRANSACTION_MONTH
+        description: "Mes de la transacción."
+      - name: PRICE_STRUCTURE_JSON
+        description: "Estructura de precios en formato JSON."
+      - name: PRICE_MINIMUM_AMOUNT
+        description: "Monto mínimo del precio."
+      - name: CONSUMES_SAAS
+        description: "Indica si consume SaaS."
+      - name: SHOULD_BE_CHARGED
+        description: "Siempre true para descuentos."
+      - name: CURRENCY
+        description: "Moneda utilizada."
+      - name: REVENUE
+        description: "Ingreso calculado del descuento."
+      - name: FLOW
+        description: "Flujo de la transacción (null para descuentos)."
+      - name: TRANSACTION_TYPE
+        description: "Tipo de transacción (null para descuentos)."
+      - name: ORIGINATION_SYSTEM
+        description: "Sistema de origen (null para descuentos)."
+      - name: SOURCE_ACCOUNT_TYPE
+        description: "Tipo de cuenta de origen (null para descuentos)."
+      - name: COUNTRY
+        description: "País de la transacción (null para descuentos)."
+      - name: ORIGIN_BANK
+        description: "Banco de origen (null para descuentos)."
+      - name: DESTINATION_BANK
+        description: "Banco de destino (null para descuentos)."
+      - name: STATUS
+        description: "Estado de la transacción (null para descuentos)."
+      - name: PROPERTY_FILTERS_JSON
+        description: "Filtros de propiedad en formato JSON."
+      - name: PROPERTIES_TO_NEGATE
+        description: "Propiedades a negar (null para descuentos)."
+      - name: LOCAL_UPDATED_AT
+        description: "Fecha de actualización local."
+
+  - name: int_revenue_discount_general
+    description: "Modelo intermediate para descuentos generales."
+    columns:
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: TRANSACTION_MONTH
+        description: "Mes de la transacción."
+      - name: TOTAL_DISCOUNT
+        description: "Total de descuentos para el cliente y mes."
+
+  - name: int_revenue_discount_specific
+    description: "Modelo intermediate para descuentos específicos."
+    columns:
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: TRANSACTION_MONTH
+        description: "Mes de la transacción."
+      - name: TOTAL_DISCOUNT
+        description: "Total de descuentos específicos para el cliente y mes."
+
+  - name: int_revenue_true_up_charge_base
+    description: "Modelo intermediate base para true up charges."
+    columns:
+      - name: MM_ID
+        description: "ID del movimiento de dinero (null para true up charges)."
+      - name: CLIENT_ID
+        description: "ID del cliente."
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: GROUP_ID
+        description: "ID del grupo."
+      - name: MATCHED_PRODUCT_NAME
+        description: "Nombre del producto (TRUE UP CHARGE)."
+      - name: LOCAL_CREATED_AT
+        description: "Fecha de creación local."
+      - name: TRANSACTION_MONTH
+        description: "Mes de la transacción."
+      - name: PRICE_STRUCTURE_JSON
+        description: "Estructura de precios en formato JSON."
+      - name: PRICE_MINIMUM_AMOUNT
+        description: "Monto mínimo del precio."
+      - name: CONSUMES_SAAS
+        description: "Indica si consume SaaS."
+      - name: SHOULD_BE_CHARGED
+        description: "Siempre true para true up charges."
+      - name: CURRENCY
+        description: "Moneda utilizada."
+      - name: REVENUE
+        description: "Ingreso calculado del true up charge."
+      - name: FLOW
+        description: "Flujo de la transacción (null para true up charges)."
+      - name: TRANSACTION_TYPE
+        description: "Tipo de transacción (null para true up charges)."
+      - name: ORIGINATION_SYSTEM
+        description: "Sistema de origen (null para true up charges)."
+      - name: SOURCE_ACCOUNT_TYPE
+        description: "Tipo de cuenta de origen (null para true up charges)."
+      - name: COUNTRY
+        description: "País de la transacción (null para true up charges)."
+      - name: ORIGIN_BANK
+        description: "Banco de origen (null para true up charges)."
+      - name: DESTINATION_BANK
+        description: "Banco de destino (null para true up charges)."
+      - name: STATUS
+        description: "Estado de la transacción (null para true up charges)."
+      - name: PROPERTY_FILTERS_JSON
+        description: "Filtros de propiedad en formato JSON."
+      - name: PROPERTIES_TO_NEGATE
+        description: "Propiedades a negar (null para true up charges)."
+      - name: LOCAL_UPDATED_AT
+        description: "Fecha de actualización local."
+
+  - name: int_rules_mms_count
+    description: "Modelo intermediate para contar transacciones MMS."
+    columns:
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: TRANSACTION_MONTH
+        description: "Mes de la transacción."
+      - name: TRANSACTION_COUNT
+        description: "Número total de transacciones MMS."
+
+  - name: int_revenue_mms_count
+    description: "Modelo intermediate para contar transacciones MMS con ingresos."
+    columns:
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: TRANSACTION_MONTH
+        description: "Mes de la transacción."
+      - name: TRX_RECEIVING_PLATFORM_FEE
+        description: "Número de transacciones que reciben platform fee."
+
+  - name: int_revenue_mms_saas_count
+    description: "Modelo intermediate para contar transacciones MMS SaaS."
+    columns:
+      - name: SEQUENCE_CUSTOMER_ID
+        description: "ID del cliente en Sequence."
+      - name: TRANSACTION_MONTH
+        description: "Mes de la transacción."
+      - name: SAAS_TRX_RECEIVING_REMAINING_MIN
+        description: "Número de transacciones SaaS que reciben mínimo restante." 

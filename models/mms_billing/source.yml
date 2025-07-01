@@ -3,6 +3,8 @@ version: 2
 sources:
   - name: SEQUENCE
     description: "Base de datos de Cobre Gold."
+    config:
+      tags: ["sources"]
     tables:
       - name: INVOICES
         description: "Tabla de facturas."
