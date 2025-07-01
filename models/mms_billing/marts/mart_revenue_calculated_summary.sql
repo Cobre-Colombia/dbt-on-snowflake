@@ -3,14 +3,14 @@
 with base_calculated as (
     select sequence_customer_id
          , group_id
-         , matched_product_name as product_name
+         , product_name
          , pricing_type
          , tier_application_basis
          , date_trunc('MONTH', transaction_month) as transaction_month
          , currency
          , max(accumulated_revenue)               as calculated_revenue
          , case
-               when tier_application_basis = 'amount' then max(accumulated_amount)
+               when tier_application_basis = 'amount' then max(accumulated_revenue)
                else max(transaction_count) end    as tier_application_value
     from {{ ref('mart_revenue_calculated') }}
     group by 1, 2, 3, 4, 5, 6, 7
