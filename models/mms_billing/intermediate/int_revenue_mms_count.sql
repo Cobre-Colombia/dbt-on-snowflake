@@ -1,3 +1,5 @@
+{{ config(materialized='ephemeral') }}
+
 select
     sequence_customer_id,
     transaction_month,

@@ -1,3 +1,6 @@
+{% set end_cutoff_date = modules.datetime.datetime.now().date() - modules.datetime.timedelta(days=0) %}
+{% set start_cutoff_date = (end_cutoff_date.replace(day=1) - modules.datetime.timedelta(days=90)).replace(day=1) %}
+
 WITH invoice_pricing_by_month AS (
     SELECT *
     FROM (
@@ -28,7 +31,7 @@ WITH invoice_pricing_by_month AS (
              , DATE_TRUNC('month', i.BILLING_PERIOD_START)           AS PRICE_STRUCTURE_MONTH
              , ROW_NUMBER()
                 OVER (
-                    PARTITION BY I.CUSTOMER_ID, I.BILLING_PERIOD_START, IS_DISCOUNT, P.PRODUCT_NAME
+                    PARTITION BY I.CUSTOMER_ID, I.BILLING_PERIOD_START, IS_DISCOUNT, COALESCE(P.PRODUCT_NAME, ILI.TITLE) 
                     ORDER BY I.CALCULATED_AT DESC, ILI.MODIFIED_AT DESC
                     )                                                  AS RN
         FROM {{ source('SEQUENCE', 'INVOICES') }} I
@@ -46,25 +49,11 @@ WITH invoice_pricing_by_month AS (
             ON C.ID = SO.SEQUENCE_ID
         WHERE 1 = 1
           AND ILI.DELETED_AT IS NULL
-          --AND BSPP.STATUS IN ('ACTIVE', 'COMPLETED')
           AND BSPP.PHASE_ARCHIVED_AT IS NULL
-          AND I.BILLING_PERIOD_START :: DATE >= '{{ var("billing_period_start") }}'
-          -- AND I.BILLING_PERIOD_END :: DATE <= '{{ var("billing_period_end") }}'
+          AND I.BILLING_PERIOD_START :: DATE between '{{ start_cutoff_date }}' and '{{ end_cutoff_date }}'
         ) LATEST
     WHERE 1 = 1
       AND RN = 1
-    -- and (
-    --     c.customer_aliases in (
-    --         {% for cid in var('client_id') %}
-    --             '{{ cid }}'{% if not loop.last %}, {% endif %}
-    --         {% endfor %}
-    --     )
-    --     {% for cid in var('client_id') %}
-    --         or c.customer_aliases like '{{ cid }},%'
-    --         or c.customer_aliases like '%,{{ cid }}'
-    --         or c.customer_aliases like '%,{{ cid }},%'
-    --     {% endfor %}
-    -- )
     )
 ,
 exploded as (

@@ -1,3 +1,5 @@
+{{ config(materialized='ephemeral') }}
+
 select
     null as mm_id,
     null as amount,

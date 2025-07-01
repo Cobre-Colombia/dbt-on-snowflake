@@ -1,7 +1,9 @@
+{{ config(materialized='table') }}
+
 with base_calculated as (
     select sequence_customer_id
          , group_id
-         , product_name
+         , matched_product_name
          , pricing_type
          , tier_application_basis
          , date_trunc('MONTH', transaction_month) as transaction_month

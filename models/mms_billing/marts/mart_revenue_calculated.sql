@@ -1,3 +1,5 @@
+{{ config(materialized='view') }}
+
 select *
 from {{ ref('mart_revenue_mms') }}
 

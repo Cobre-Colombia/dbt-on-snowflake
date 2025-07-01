@@ -1,3 +1,9 @@
+{{ config(
+    materialized='incremental',
+    unique_key=['MM_ID', 'SEQUENCE_CUSTOMER_ID', 'MATCHED_PRODUCT_NAME', 'LOCAL_CREATED_AT', 'AMOUNT'],
+    incremental_strategy='merge'
+) }}
+
 with with_date as (
     select
         mm_id, amount, client_id, sequence_customer_id, group_id, local_created_at,
@@ -10,6 +16,9 @@ with with_date as (
         local_updated_at, hash(mm_id, sequence_customer_id, matched_product_name, local_created_at, amount) as hash_match
     from {{ ref('mart_rules') }}
     where upper(matched_product_name) not in ('DISCOUNT', 'PLATFORM FEE', 'TRUE UP CHARGE') and should_be_charged
+    {% if is_incremental() %}
+      and date_trunc('month', local_created_at) >= (select max(transaction_month) from {{ this }})
+    {% endif %}
 )
 ,
 ranked as (

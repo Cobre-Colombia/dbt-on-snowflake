@@ -1,3 +1,5 @@
+{{ config(materialized='table') }}
+
 select s.legal_name                                                         as group_name
      , b.group_id
      , b.sequence_customer_id

@@ -1,3 +1,9 @@
+{{ config(
+    materialized='incremental',
+    unique_key=['SEQUENCE_CUSTOMER_ID', 'MATCHED_PRODUCT_NAME', 'TRANSACTION_MONTH', 'AMOUNT'],
+    incremental_strategy='merge'
+) }}
+
 select distinct
     null as mm_id,
     null as client_id,

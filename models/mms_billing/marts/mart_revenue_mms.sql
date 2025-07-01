@@ -1,3 +1,9 @@
+{{ config(
+    materialized='incremental',
+    unique_key=['MM_ID', 'SEQUENCE_CUSTOMER_ID', 'MATCHED_PRODUCT_NAME', 'TRANSACTION_MONTH', 'AMOUNT'],
+    incremental_strategy='merge'
+) }}
+
 with with_allocations as (
     select
         r.*,
@@ -18,6 +24,9 @@ with with_allocations as (
     left join {{ ref('int_revenue_discount_general') }} gd
       on r.sequence_customer_id = gd.sequence_customer_id
       and r.transaction_month = gd.transaction_month
+    {% if is_incremental() %}
+      where r.transaction_month >= (select max(transaction_month) from {{ this }})
+    {% endif %}
 )
 ,
  final_with_distributions as (
