@@ -1,168 +1,191 @@
-WITH BASE_CALCULATED AS (
-    SELECT SEQUENCE_CUSTOMER_ID, GROUP_ID, PRODUCT_NAME, PRICING_TYPE, TIER_APPLICATION_BASIS, DATE_TRUNC('MONTH', TRANSACTION_MONTH) AS TRANSACTION_MONTH, CURRENCY, MAX(ACCUMULATED_REVENUE) AS CALCULATED_REVENUE,
-        CASE WHEN TIER_APPLICATION_BASIS = 'amount' THEN MAX(ACCUMULATED_AMOUNT) ELSE MAX(TRANSACTION_COUNT) END AS TIER_APPLICATION_VALUE
-    FROM {{ ref('mart_aggregated_revenue') }}
-    GROUP BY 1, 2, 3, 4, 5, 6, 7
-)
--- 1. CTE base de clientes-grupo-producto y tipo de pricing
-, CUSTOMER_GROUPS AS (
-    SELECT DISTINCT 
-        SEQUENCE_CUSTOMER_ID, 
-        GROUP_ID, 
-        PRICING_TYPE, 
-        MINIMUM_REVENUE
-    FROM {{ ref('mart_aggregated_revenue') }}
-    WHERE IS_SAAS_TRANSACTION = TRUE
-)
+with base_calculated as (
+    select sequence_customer_id
+         , group_id
+         , product_name
+         , pricing_type
+         , tier_application_basis
+         , date_trunc('MONTH', transaction_month) as transaction_month
+         , currency
+         , max(accumulated_revenue)               as calculated_revenue
+         , case
+               when tier_application_basis = 'amount' then max(accumulated_amount)
+               else max(transaction_count) end    as tier_application_value
+    from {{ ref('mart_aggregated_revenue') }}
+    group by 1, 2, 3, 4, 5, 6, 7
+    )
+   , customer_groups as (
+    select distinct
+           sequence_customer_id
+         , group_id
+         , pricing_type
+         , minimum_revenue
+    from {{ ref('mart_aggregated_revenue') }}
+    where is_saas_transaction = true
+    )
 
-, DISTINCT_MONTH AS (
-    SELECT DISTINCT 
-        DATE_TRUNC('MONTH', TRANSACTION_MONTH) AS TRANSACTION_MONTH
-    FROM {{ ref('mart_aggregated_revenue') }}
-)
+   , distinct_month as (
+    select distinct
+           date_trunc('MONTH', transaction_month) as transaction_month
+    from {{ ref('mart_aggregated_revenue') }}
+    )
 
-, TRX_COUNT AS (
-    SELECT 
-        cg.SEQUENCE_CUSTOMER_ID,
-        cg.GROUP_ID,
-        'true up charge' AS PRODUCT_NAME,
-        cg.PRICING_TYPE,
-        'amount' AS TIER_APPLICATION_BASIS,
-        dm.TRANSACTION_MONTH,
-        cg.MINIMUM_REVENUE,
-        MAX(m.TRANSACTION_COUNT) AS TRANSACTION_COUNT
-    FROM CUSTOMER_GROUPS cg
-    CROSS JOIN DISTINCT_MONTH dm
-    LEFT JOIN {{ ref('mart_aggregated_revenue') }} m
-        ON m.SEQUENCE_CUSTOMER_ID = cg.SEQUENCE_CUSTOMER_ID
-        AND m.GROUP_ID = cg.GROUP_ID
-        AND m.PRICING_TYPE = cg.PRICING_TYPE
-        AND DATE_TRUNC('MONTH', m.TRANSACTION_MONTH) = dm.TRANSACTION_MONTH
-        AND m.IS_SAAS_TRANSACTION = TRUE
-    GROUP BY 1, 2, 3, 4, 5, 6,7
-)
-, REMAINING_MINIMUM_AMOUNT AS (
-    SELECT DISTINCT r.SEQUENCE_CUSTOMER_ID, r.GROUP_ID
-        , 'true up charge' AS PRODUCT_NAME
-        , NULL AS PRICING_TYPE, 'amount' AS TIER_APPLICATION_BASIS, DATE_TRUNC('MONTH', r.TRANSACTION_MONTH) AS TRANSACTION_MONTH, r.CURRENCY
-        , TRX_COUNT.TRANSACTION_COUNT
-        , MIN(
-                CASE 
-                    WHEN TRX_COUNT.TRANSACTION_COUNT > 0 THEN r.REMAINING_MINIMUM_AMOUNT
-                    ELSE TRX_COUNT.MINIMUM_REVENUE
-                END
-            ) AS CALCULATED_REVENUE
-        ,1 AS TIER_APPLICATION_VALUE
-    FROM {{ ref('mart_aggregated_revenue') }} r
-    LEFT JOIN TRX_COUNT
-        ON r.SEQUENCE_CUSTOMER_ID = TRX_COUNT.SEQUENCE_CUSTOMER_ID
-        AND r.TRANSACTION_MONTH::DATE = TRX_COUNT.TRANSACTION_MONTH::DATE
-    WHERE TRX_COUNT.TRANSACTION_COUNT > 0
-      AND R.PRODUCT_NAME NOT ILIKE '%discount%'
-    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
-)
-, BASE AS (
-  SELECT SEQUENCE_CUSTOMER_ID, GROUP_ID, PRODUCT_NAME, PRICING_TYPE, TIER_APPLICATION_BASIS,TRANSACTION_MONTH, CURRENCY, CALCULATED_REVENUE, TIER_APPLICATION_VALUE
-  FROM BASE_CALCULATED
-  UNION ALL
-  SELECT SEQUENCE_CUSTOMER_ID, GROUP_ID, PRODUCT_NAME, PRICING_TYPE, TIER_APPLICATION_BASIS,TRANSACTION_MONTH, CURRENCY, CALCULATED_REVENUE, TIER_APPLICATION_VALUE
-  FROM REMAINING_MINIMUM_AMOUNT
-)
- 
-, SEQUENCE_ AS (
-    SELECT C.ID                                                 AS CUSTOMER_ID
-         , C.LEGAL_NAME
-         , C.CUSTOMER_ALIASES
-         , IL.INVOICE_ID
-         , IL.BILLING_SCHEDULE_ID
-         , IL.PRICE_ID
-         , DATE_TRUNC('MONTH', TO_DATE(I.BILLING_PERIOD_START)) AS BILLING_PERIOD_START
-         , LAST_DAY(TO_DATE(I.BILLING_PERIOD_END))              AS BILLING_PERIOD_END
-         , CASE 
-            WHEN LOWER(IL.TITLE) = 'new discount' THEN 'discount'
-            ELSE LOWER(IL.TITLE)
-           END AS TITLE
-         , CASE 
-            WHEN LOWER(P.PRODUCT_NAME) = 'new discount' THEN 'discount'
-            ELSE LOWER(P.PRODUCT_NAME)
-           END AS PRODUCT_NAME
-         , ROUND(IL.NET_TOTAL)                                  AS NET_TOTAL
-         , IL.CURRENCY
-         , ROUND(SC.PRICE_MINIMUM_AMOUNT)                       AS PRICE_MINIMUM_AMOUNT
-         , IL.QUANTITY                                          AS TIER_APPLICATION_VALUE
-    FROM COBRE_GOLD_DB.SEQUENCE.INVOICES I
-    LEFT JOIN COBRE_GOLD_DB.SEQUENCE.INVOICE_LINE_ITEMS IL
-        ON IL.INVOICE_ID = I.ID
-    LEFT JOIN COBRE_GOLD_DB.SEQUENCE.CUSTOMERS C
-        ON I.CUSTOMER_ID = C.ID
-    LEFT JOIN COBRE_GOLD_DB.SEQUENCE.PRICES P
-        ON IL.PRICE_ID = P.ID
-    LEFT JOIN COBRE_GOLD_DB.SEQUENCE.BILLING_SCHEDULE_PHASE_PRICES SC
-        ON IL.PRICE_ID = SC.PRICE_ID
-        AND IL.BILLING_SCHEDULE_ID = SC.BILLING_SCHEDULE_ID
-        AND I.BILLING_PERIOD_START >= SC.PHASE_START_DATE
-        AND I.BILLING_PERIOD_START <= COALESCE(SC.PHASE_END_DATE, '2099-01-01')
-        AND (SC.STATUS IN ('ACTIVE', 'COMPLETED') OR SC.STATUS IS NULL)
-    WHERE 1=1
-      AND SC.PHASE_ARCHIVED_AT IS NULL
-      AND IL.DELETED_AT IS NULL
-      AND I.STATUS <> 'VOIDED'
-    QUALIFY ROW_NUMBER() OVER (
-        PARTITION BY C.ID, I.BILLING_PERIOD_START, TITLE, PRODUCT_NAME ORDER BY I.CALCULATED_AT DESC
+   , trx_count as (
+    select cg.sequence_customer_id
+         , cg.group_id
+         , 'true up charge'         as product_name
+         , cg.pricing_type
+         , 'amount'                 as tier_application_basis
+         , dm.transaction_month
+         , cg.minimum_revenue
+         , max(m.transaction_count) as transaction_count
+    from customer_groups cg
+    cross join distinct_month dm
+    left join {{ ref('mart_aggregated_revenue') }} m
+        on m.sequence_customer_id = cg.sequence_customer_id
+        and m.group_id = cg.group_id
+        and m.pricing_type = cg.pricing_type
+        and date_trunc('MONTH', m.transaction_month) = dm.transaction_month
+        and m.is_saas_transaction = true
+    group by 1, 2, 3, 4, 5, 6, 7
+    )
+
+   , remaining_minimum_amount as (
+    select distinct
+           r.sequence_customer_id
+         , r.group_id
+         , 'true up charge'                         as product_name
+         , null                                     as pricing_type
+         , 'amount'                                 as tier_application_basis
+         , date_trunc('MONTH', r.transaction_month) as transaction_month
+         , r.currency
+         , trx_count.transaction_count
+         , min(
+                   case
+                       when trx_count.transaction_count > 0 then r.remaining_minimum_amount
+                       end
+           )                                        as calculated_revenue
+         , 1                                        as tier_application_value
+    from {{ ref('mart_aggregated_revenue') }} r
+    left join trx_count
+        on r.sequence_customer_id = trx_count.sequence_customer_id
+        and r.transaction_month::date = trx_count.transaction_month::date
+    where trx_count.transaction_count > 0
+      and r.product_name not ilike '%discount%'
+    group by 1, 2, 3, 4, 5, 6, 7, 8
+    )
+
+   , base as (
+    select sequence_customer_id
+         , group_id
+         , product_name
+         , pricing_type
+         , tier_application_basis
+         , transaction_month
+         , currency
+         , calculated_revenue
+         , tier_application_value
+    from base_calculated
+    union all
+    select sequence_customer_id
+         , group_id
+         , product_name
+         , pricing_type
+         , tier_application_basis
+         , transaction_month
+         , currency
+         , calculated_revenue
+         , tier_application_value
+    from remaining_minimum_amount
+    )
+
+   , sequence_ as (
+    select c.id                                                 as customer_id
+         , c.legal_name
+         , c.customer_aliases
+         , il.invoice_id
+         , il.billing_schedule_id
+         , il.price_id
+         , date_trunc('MONTH', to_date(i.billing_period_start)) as billing_period_start
+         , last_day(to_date(i.billing_period_end))              as billing_period_end
+         , case
+               when lower(il.title) = 'new discount' then 'discount'
+               else lower(il.title)
+        end                                                     as title
+         , case
+               when lower(p.product_name) = 'new discount' then 'discount'
+               else lower(p.product_name)
+        end                                                     as product_name
+         , round(il.net_total)                                  as net_total
+         , il.currency
+         , round(sc.price_minimum_amount)                       as price_minimum_amount
+         , il.quantity                                          as tier_application_value
+    from {{ source('SEQUENCE', 'INVOICES') }} i
+    left join {{ source('SEQUENCE', 'INVOICE_LINE_ITEMS') }} il
+        on il.invoice_id = i.id
+    left join {{ source('SEQUENCE', 'CUSTOMERS') }} c
+        on i.customer_id = c.id
+    left join {{ source('SEQUENCE', 'PRICES') }} p
+        on il.price_id = p.id
+    left join {{ source('SEQUENCE', 'BILLING_SCHEDULE_PHASE_PRICES') }} sc
+        on il.price_id = sc.price_id
+        and il.billing_schedule_id = sc.billing_schedule_id
+        and i.billing_period_start >= sc.phase_start_date
+        and i.billing_period_start <= coalesce(sc.phase_end_date, '2099-01-01')
+        and (sc.status in ('ACTIVE', 'COMPLETED') or sc.status is null)
+    where 1 = 1
+      and sc.phase_archived_at is null
+      and il.deleted_at is null
+      and i.status <> 'VOIDED'
+    qualify row_number() over (
+        partition by c.id, i.billing_period_start, title, product_name order by i.calculated_at desc
         ) = 1
     )
 
-, SEQUENCE_PRODUCT AS (
+   , sequence_product as (
+    select legal_name
+         , customer_id
+         , iff(title ilike '%discount%', 'discount', coalesce(product_name, title)) as product_name
+         , date_trunc('MONTH', billing_period_start)                                as transaction_month
+         , sum(net_total)                                                           as net_total
+         , sum(tier_application_value)                                              as tier_application_value
+    from sequence_
+    group by 1, 2, 3, 4
+    )
 
-SELECT LEGAL_NAME, CUSTOMER_ID, IFF(TITLE ILIKE '%discount%', 'discount', COALESCE(PRODUCT_NAME, TITLE)) AS PRODUCT_NAME, DATE_TRUNC('MONTH', BILLING_PERIOD_START) AS TRANSACTION_MONTH, SUM(NET_TOTAL) NET_TOTAL, SUM(TIER_APPLICATION_VALUE) AS TIER_APPLICATION_VALUE
-FROM SEQUENCE_
-GROUP BY 1, 2, 3, 4
-)
+select s.legal_name                                                         as group_name
+     , b.group_id
+     , b.sequence_customer_id
+     , b.product_name                                                       as calculated_product_name
+     , s.product_name                                                       as sequence_product_name
+     , s.transaction_month                                                  as billing_period
+     , b.currency
+     , b.pricing_type
+     , case
+           when b.tier_application_basis is null
+               then b.pricing_type
+           else upper(b.tier_application_basis)
+    end                                                                     as tier_application_basis
+     , round(b.tier_application_value, 0)                                   as calculated_tier_application_value
+     , round(s.tier_application_value, 0)                                   as sequence_tier_application_value
+     , round(coalesce(calculated_revenue, 0), 0)                            as calculated_revenue_
+     , round(coalesce(s.net_total, 0), 0)                                   as sequence_revenue_
+     , round(coalesce(calculated_revenue, 0) - coalesce(s.net_total, 0), 0) as _difference
+     , coalesce(
+        round(
+                case
+                    when calculated_revenue_ = 0 and sequence_revenue_ = 0 then 0
+                    else (calculated_revenue_::float - sequence_revenue_::float)
+                             / nullif((calculated_revenue_::float + sequence_revenue_::float) / 2, 0)
+                        * 100
+                    end,
+                2),
+        0)                                                                  as relative_percentage_difference
 
-SELECT 
-    S.LEGAL_NAME AS GROUP_NAME,
-    B.GROUP_ID,
-    B.SEQUENCE_CUSTOMER_ID,
-    B.PRODUCT_NAME AS CALCULATED_PRODUCT_NAME,
-    S.PRODUCT_NAME AS SEQUENCE_PRODUCT_NAME,
-    S.TRANSACTION_MONTH AS BILLING_PERIOD,
-    B.CURRENCY,
-    B.PRICING_TYPE,
-    CASE   
-        WHEN B.TIER_APPLICATION_BASIS IS NULL 
-            THEN B.PRICING_TYPE 
-        ELSE UPPER(B.TIER_APPLICATION_BASIS) 
-    END AS TIER_APPLICATION_BASIS,
-    ROUND(B.TIER_APPLICATION_VALUE, 0) AS CALCULATED_TIER_APPLICATION_VALUE,
-    ROUND(S.TIER_APPLICATION_VALUE, 0) AS SEQUENCE_TIER_APPLICATION_VALUE,
-    ROUND(COALESCE(CALCULATED_REVENUE, 0), 0) AS CALCULATED_REVENUE_,
-    ROUND(COALESCE(S.NET_TOTAL, 0), 0) AS SEQUENCE_REVENUE_, 
-    ROUND(COALESCE(CALCULATED_REVENUE, 0) - COALESCE(S.NET_TOTAL, 0), 0) AS _DIFFERENCE,
-
-    COALESCE(
-        ROUND(
-            CASE
-                WHEN CALCULATED_REVENUE_ = 0 AND SEQUENCE_REVENUE_ = 0 THEN 0
-                ELSE (CALCULATED_REVENUE_::FLOAT - SEQUENCE_REVENUE_::FLOAT)
-                    / NULLIF((CALCULATED_REVENUE_::FLOAT + SEQUENCE_REVENUE_::FLOAT) / 2, 0)
-                    * 100
-            END,
-        2),
-    0) AS RELATIVE_PERCENTAGE_DIFFERENCE
-
-
-FROM BASE B
-FULL OUTER JOIN SEQUENCE_PRODUCT S
-    ON B.SEQUENCE_CUSTOMER_ID = S.CUSTOMER_ID 
-   AND CASE 
-            WHEN B.PRODUCT_NAME LIKE '%||Platform Fee%' THEN 'platform fee' 
-            WHEN B.PRODUCT_NAME LIKE '%Discount%' THEN 'discount' 
-        ELSE LOWER(B.PRODUCT_NAME) END = LOWER(S.PRODUCT_NAME)
-   AND B.TRANSACTION_MONTH = S.TRANSACTION_MONTH
--- WHERE 
---     (B.GROUP_ID IS NOT NULL AND ( GROUP_NAME IS NULL AND CALCULATED_PRODUCT_NAME <> 'true up charge'))
---     OR S.CUSTOMER_ID IN (
---         SELECT DISTINCT SEQUENCE_CUSTOMER_ID
---         FROM BASE
---     ) 
-ORDER BY GROUP_NAME ASC, BILLING_PERIOD ASC, CALCULATED_PRODUCT_NAME ASC, _DIFFERENCE
+from base b
+full outer join sequence_product s
+    on b.sequence_customer_id = s.customer_id
+    and
+       case when b.product_name like '%Discount%' then 'discount' else lower(b.product_name) end =
+       lower(s.product_name)
+    and b.transaction_month = s.transaction_month
+order by group_name asc, billing_period asc, calculated_product_name asc, _difference
