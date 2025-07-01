@@ -6,7 +6,6 @@ select
     r.group_id,
     month as local_created_at,
     concat(r.title, iff(r.product_name is not null, concat('||', r.product_name), '')) as matched_product_name,
-    --r.product_name as matched_product_name,
     coalesce(r.price_structure_json, parse_json('{
         "price": ' || r.net_total || ',
         "pricingType": "FIXED"

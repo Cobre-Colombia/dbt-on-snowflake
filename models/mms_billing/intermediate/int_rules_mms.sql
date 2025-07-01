@@ -40,24 +40,24 @@ with rules as (
 
 mm as (
     select *, date_trunc('month', eventtimestamp) as event_month from (
-        select mm_id, client_id, eventtype, eventtimestamp, flow, transaction_type, origination_system,
+        select mm_id, coalesce(client_id_edit, client_id) as client_id, eventtype, eventtimestamp, flow, transaction_type, origination_system,
                source_account_type, destination_bank, origin_bank, country, status, amount, updated_at,
-               local_created_at, client_id_edit as regional_client_id
+               local_created_at
         from {{ ref('stg_payouts_mms') }} where local_created_at < '{{ cutoff_date }}'
         union all
-        select mm_id, client_id, eventtype, eventtimestamp, flow, transaction_type, origination_system,
+        select mm_id, coalesce(client_id_edit, client_id) as client_id, eventtype, eventtimestamp, flow, transaction_type, origination_system,
                source_account_type, destination_bank, origin_bank, country, status, amount, updated_at,
-               local_created_at, client_id_edit as regional_client_id
+               local_created_at
         from {{ ref('stg_payin_mms') }} where local_created_at < '{{ cutoff_date }}'
         union all
-        select mm_id, client_id, eventtype, eventtimestamp, flow, transaction_type, origination_system,
+        select mm_id, coalesce(client_id_edit, client_id) as client_id, eventtype, eventtimestamp, flow, transaction_type, origination_system,
                source_account_type, destination_bank, origin_bank, country, status, amount, updated_at,
-               local_created_at, client_id_edit as regional_client_id
+               local_created_at
         from {{ ref('stg_dac_mms') }} where local_created_at < '{{ cutoff_date }}'
         union all
-        select mm_id, client_id, eventtype, eventtimestamp, flow, transaction_type, origination_system,
+        select mm_id, coalesce(client_id_edit, client_id) as client_id, eventtype, eventtimestamp, flow, transaction_type, origination_system,
                source_account_type, destination_bank, origin_bank, country, status, amount, updated_at,
-               local_created_at, client_id_edit as regional_client_id
+               local_created_at
         from {{ ref('stg_balance_recharges') }} where local_created_at < '{{ cutoff_date }}'
     )
 )
@@ -158,7 +158,7 @@ select
     
 from mm
 join rules r
-    on coalesce(mm.regional_client_id, mm.client_id) = r.client_id
+    on mm.client_id = r.client_id
     and mm.event_month = r.price_structure_month
 )
 
