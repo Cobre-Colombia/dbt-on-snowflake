@@ -22,25 +22,21 @@ vars:
 
 models:
   dbt_cobre_data_hub:
+    +grants:
+      select: ["DATA_DEV_L1"]
     mms_billing:
       staging:
         +materialized: view
         +tags: ["staging"]
         +docs:
           node_color: peru
-        +grant:
-          select: ["DATA_DEV_L1"]
       intermediate:
         +materialized: table
         +tags: ["intermediate"]
         +docs:
           node_color: silver
-        +grant:
-          select: ["DATA_DEV_L1"]
       marts:
         +materialized: table
         +tags: ["marts"]
         +docs:
           node_color: gold
-        +grant:
-          select: ["DATA_DEV_L1"]
