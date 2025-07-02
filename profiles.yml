@@ -8,7 +8,7 @@ cobre_data_hub:
       role: DATA_DEV_L0
       database: COBRE_GOLD_DB
       schema: DBT_DEV
-      warehouse: ETL_WH
+      warehouse: COMPUTE_WH
       threads: 1
     prod:
       type: snowflake
@@ -17,5 +17,5 @@ cobre_data_hub:
       role: DATA_DEV_L0
       database: COBRE_GOLD_DB
       schema: DBT_PROD
-      warehouse: ETL_WH
+      warehouse: COMPUTE_WH
       threads: 1
