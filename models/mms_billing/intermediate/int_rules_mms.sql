@@ -38,7 +38,7 @@ with rules as (
         currency
     from {{ ref('stg_invoice_pricing') }}
     where price_structure_json is not null
-      and upper(product_name) not in ('DISCOUNT', 'PLATFORM FEE')
+      and upper(product_name) not in ('DISCOUNT', 'PLATFORM FEE', 'TRUE UP CHARGE')
 ),
 
 mm as (
