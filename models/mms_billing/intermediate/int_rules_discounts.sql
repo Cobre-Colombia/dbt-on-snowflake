@@ -30,4 +30,4 @@ select
     month as local_updated_at,
     hash(null, sequence_customer_id, matched_product_name, local_created_at, null) as hash_match
 from {{ ref('stg_invoice_pricing') }} r
-where upper(title) = 'DISCOUNT'
+where upper(title) in ('DISCOUNT', 'NEW DISCOUNT')

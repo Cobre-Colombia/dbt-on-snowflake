@@ -40,6 +40,7 @@ select
     , should_be_charged as is_charged
     , revenue
     , cumulative_revenue as accumulated_revenue
+    , cumulative_amount as accumulated_amount
     , saas_revenue as saas_revenue_amount
     , not_saas_revenue as non_saas_revenue_amount
     , revenue_type as revenue_type
