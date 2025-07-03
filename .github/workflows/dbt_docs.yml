@@ -2,7 +2,7 @@ name: DBT Documentation
 
 on:
   push:
-    branches: [ "trunk" ]
+    branches: [ "main" ]
     paths:
       - models/**
       - dbt_project.yml

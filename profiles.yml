@@ -19,3 +19,4 @@ cobre_data_hub:
       schema: DBT_PROD
       warehouse: COMPUTE_WH
       threads: 1
+
