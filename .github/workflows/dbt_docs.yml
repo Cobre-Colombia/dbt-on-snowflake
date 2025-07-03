@@ -1,0 +1,88 @@
+name: DBT Documentation
+
+on:
+  push:
+    branches: [ "trunk" ]
+    paths:
+      - models/**
+      - dbt_project.yml
+
+env:
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+  SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+  SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+  AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+  AWS_REGION: us-east-1
+  DBT_ROLE: DBT_ROLE
+  DBT_DATABASE: COBRE_DBT_DB
+  DBT_SCHEMA: DBT
+  DBT_WAREHOUSE: COMPUTE_WH
+  DBT_THREADS: 1
+  DBT_PROFILE: git_profile
+
+jobs:
+  generate-docs:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pages: write
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r dbt/requirements.txt
+          pip install dbt-core dbt-snowflake
+
+      - name: Install dbt dependencies
+        run: dbt deps
+        working-directory: ./
+
+      - name: Create dbt profile
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml <<EOF
+          git_profile:
+            target: dev
+            outputs:
+              dev:
+                type: snowflake
+                account: ${SNOWFLAKE_ACCOUNT}
+                user: ${SNOWFLAKE_USER}
+                role: ${DBT_ROLE}
+                database: ${DBT_DATABASE}
+                schema: ${DBT_SCHEMA}
+                warehouse: ${DBT_WAREHOUSE}
+                threads: ${DBT_THREADS}
+                private_key: |
+          $(echo "${SNOWFLAKE_PRIVATE_KEY}" | sed 's/^/        /')
+          EOF
+
+      - name: Generate dbt documentation
+        run: dbt docs generate --profiles-dir ~/.dbt --profile git_profile
+        working-directory: ./
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload documentation to GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './target'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
